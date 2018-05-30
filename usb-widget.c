@@ -45,12 +45,78 @@ typedef struct _usb_widget_lun_item {
     spice_usb_device_lun_info info;
 } usb_widget_lun_item;
 
+static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
+                                            SpiceUsbDeviceManager *usb_dev_mgr,
+                                            SpiceUsbDevice *usb_device)
+{
+    GtkTreeIter level1, level2;
+    GArray *lun_array;
+    gchar *manufacturer, *product, *addr_str;
+    guint j;
+
+    /* Append a USB device row */
+    gtk_tree_store_append(treestore, &level1, NULL);
+
+    spice_usb_device_get_strings(usb_device, &manufacturer, &product);
+    //(gint)spice_usb_device_get_vid(usb_device),
+    //(gint)spice_usb_device_get_pid(usb_device));
+    addr_str = g_strdup_printf("%d:%d",
+                                (gint)spice_usb_device_get_busnum(usb_device),
+                                (gint)spice_usb_device_get_devaddr(usb_device));
+    g_print("usb device a:[%s] p:[%s] m:[%s]\n", addr_str, manufacturer, product);
+
+    gtk_tree_store_set(treestore, &level1,
+        COL_ADDRESS, addr_str,
+        COL_VENDOR, manufacturer,
+        COL_PRODUCT, product,
+        COL_LUN_ITEM, FALSE, /* USB device item */
+        COL_ROW_COLOR, "beige",
+        COL_ROW_COLOR_SET, TRUE,
+        -1);
+
+    /* get all the luns */
+    lun_array = spice_usb_device_manager_get_device_luns(usb_dev_mgr, usb_device);
+    for (j = 0; j < lun_array->len; j++) {
+        usb_widget_lun_item *lun_item;
+        gchar lun_str[8];
+
+        lun_item = g_malloc(sizeof(*lun_item));
+        lun_item->manager = usb_dev_mgr;
+        lun_item->device = usb_device;
+        lun_item->lun = g_array_index(lun_array, guint, j);
+        spice_usb_device_manager_device_lun_get_info(usb_dev_mgr, usb_device, lun_item->lun, &lun_item->info);
+        g_print("lun %d v:[%s] p:[%s] r:[%s] file:[%s] lun_item:%p\n",
+                j, lun_item->info.vendor, lun_item->info.product,
+                lun_item->info.revision, lun_item->info.file_path, lun_item);
+        g_snprintf(lun_str, 8, "↳%d", lun_item->lun);
+
+        /* Append LUN as a child of USB device */
+        gtk_tree_store_append(treestore, &level2, &level1);
+        gtk_tree_store_set(treestore, &level2,
+                COL_ADDRESS, lun_str,
+                COL_VENDOR, lun_item->info.vendor,
+                COL_PRODUCT, lun_item->info.product,
+                COL_REVISION, lun_item->info.revision,
+                COL_ALIAS, lun_item->info.alias,
+                COL_STARTED, lun_item->info.started,
+                COL_LOADED, lun_item->info.loaded,
+                COL_LOCKED, lun_item->info.locked,
+                COL_FILE, lun_item->info.file_path,
+                COL_LUN_ITEM, TRUE, /* LUN item */
+                COL_ITEM_DATA, (gpointer)lun_item,
+                COL_ROW_COLOR, "azure",
+                COL_ROW_COLOR_SET, TRUE,
+                -1);
+    }
+}
+
 static GtkTreeModel* create_and_fill_model (void)
 {
-    GtkTreeStore  *treestore;
+    GtkTreeStore *treestore;
     SpiceUsbDeviceManager *usb_dev_mgr;
     GPtrArray *usb_dev_list;
-    guint i,j;
+    SpiceUsbDevice *usb_device;
+    guint i;
 
     treestore = gtk_tree_store_new(NUM_COLS,
                         G_TYPE_STRING, /* COL_ADDRESS */
@@ -75,68 +141,9 @@ static GtkTreeModel* create_and_fill_model (void)
     g_print("got devices list, len:%d\n", usb_dev_list->len);
 
     for (i = 0; i < usb_dev_list->len; i++) {
-        GtkTreeIter level1, level2;
-        SpiceUsbDevice *usb_device;
-        GArray *lun_array;
-        gchar *manufacturer, *product, *addr_str;
-
-        /* Append a USB device row */
-        gtk_tree_store_append(treestore, &level1, NULL);
-
         /* get the device and its properties */
         usb_device = g_ptr_array_index(usb_dev_list, i);
-        spice_usb_device_get_strings(usb_device, &manufacturer, &product);
-        //(gint)spice_usb_device_get_vid(usb_device),
-        //(gint)spice_usb_device_get_pid(usb_device));
-        addr_str = g_strdup_printf("%d:%d",
-                                   (gint)spice_usb_device_get_busnum(usb_device),
-                                   (gint)spice_usb_device_get_devaddr(usb_device));
-        g_print("usb device %d a:[%s] p:[%s] m:[%s]\n", i, addr_str, manufacturer, product);
-
-        gtk_tree_store_set(treestore, &level1,
-            COL_ADDRESS, addr_str,
-            COL_VENDOR, manufacturer,
-            COL_PRODUCT, product,
-            COL_LUN_ITEM, FALSE, /* USB device item */
-            COL_ROW_COLOR, "beige",
-            COL_ROW_COLOR_SET, TRUE,
-            -1);
-
-        /* get all the luns */
-        lun_array = spice_usb_device_manager_get_device_luns(usb_dev_mgr, usb_device);
-        for (j = 0; j < lun_array->len; j++) {
-            usb_widget_lun_item *lun_item;
-            gchar lun_str[8];
-
-            lun_item = g_malloc(sizeof(*lun_item));
-            lun_item->manager = usb_dev_mgr;
-            lun_item->device = usb_device;
-            lun_item->lun = g_array_index(lun_array, guint, j);
-            spice_usb_device_manager_device_lun_get_info(usb_dev_mgr, usb_device, lun_item->lun, &lun_item->info);
-            g_print("lun %d v:[%s] p:[%s] r:[%s] file:[%s] lun_item:%p\n",
-                    j, lun_item->info.vendor, lun_item->info.product, 
-                    lun_item->info.revision, lun_item->info.file_path, lun_item);
-            g_snprintf(lun_str, 8, "↳%d", lun_item->lun);
-
-            /* Append LUN as a child of USB device */
-            gtk_tree_store_append(treestore, &level2, &level1);
-            gtk_tree_store_set(treestore, &level2,
-                    COL_ADDRESS, lun_str,
-                    COL_VENDOR, lun_item->info.vendor,
-                    COL_PRODUCT, lun_item->info.product,
-                    COL_REVISION, lun_item->info.revision,
-                    COL_ALIAS, lun_item->info.alias,
-                    COL_STARTED, lun_item->info.started,
-                    COL_LOADED, lun_item->info.loaded,
-                    COL_LOCKED, lun_item->info.locked,
-                    COL_FILE, lun_item->info.file_path,
-                    COL_LUN_ITEM, TRUE, /* LUN item */
-                    COL_ITEM_DATA, (gpointer)lun_item,
-                    COL_ROW_COLOR, "azure",
-                    COL_ROW_COLOR_SET, TRUE,
-                    -1);
-        }
-        //g_free(lun_array);
+        usb_widget_treestore_add_device(treestore, usb_dev_mgr, usb_device);
     }
 
     return GTK_TREE_MODEL(treestore);
@@ -432,7 +439,7 @@ static void add_cd_lun_button_clicked_cb(GtkWidget *add_button, gpointer data)
             7, 1); // width height
 
     /* file/device path entry */
-    file_entry = gtk_entry_new();    
+    file_entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(file_entry), "file-path");
     gtk_grid_attach(GTK_GRID(grid),
             file_entry,
@@ -555,7 +562,7 @@ static void ok_button_clicked_cb(GtkWidget *widget, gpointer data)
 {
     GtkWidget *window = (GtkWidget *)data;
 
-    g_print ("OK pressed\n");        
+    g_print ("OK pressed\n");
     gtk_widget_destroy(window);
 }
 
