@@ -27,19 +27,43 @@
 
 G_BEGIN_DECLS
 
-/**
- * SpiceUsbDevice:
- *
- * The #SpiceUsbDevice struct is opaque and cannot be accessed directly.
- */
-typedef struct _SpiceUsbDevice SpiceUsbDevice;
+#define SPICE_TYPE_USB_DEVICE_MANAGER            (spice_usb_device_manager_get_type ())
+#define SPICE_USB_DEVICE_MANAGER(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), SPICE_TYPE_USB_DEVICE_MANAGER, SpiceUsbDeviceManager))
+#define SPICE_USB_DEVICE_MANAGER_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), SPICE_TYPE_USB_DEVICE_MANAGER, SpiceUsbDeviceManagerClass))
+#define SPICE_IS_USB_DEVICE_MANAGER(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), SPICE_TYPE_USB_DEVICE_MANAGER))
+#define SPICE_IS_USB_DEVICE_MANAGER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), SPICE_TYPE_USB_DEVICE_MANAGER))
+#define SPICE_USB_DEVICE_MANAGER_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), SPICE_TYPE_USB_DEVICE_MANAGER, SpiceUsbDeviceManagerClass))
 
-/**
- * SpiceUsbDeviceManager:
- *
- * The #SpiceUsbDeviceManager struct is opaque and should not be accessed directly.
- */
 typedef struct _SpiceUsbDeviceManager SpiceUsbDeviceManager;
+typedef struct _SpiceUsbDeviceManagerClass SpiceUsbDeviceManagerClass;
+typedef struct _SpiceUsbDeviceManagerPrivate SpiceUsbDeviceManagerPrivate;
+
+typedef struct _SpiceUsbDeviceInfo SpiceUsbDevice;
+
+struct _SpiceUsbDeviceManager
+{
+    GObject parent;
+
+    /*< private >*/
+    SpiceUsbDeviceManagerPrivate *priv;
+    /* Do not add fields to this struct */
+};
+
+struct _SpiceUsbDeviceManagerClass
+{
+    GObjectClass parent_class;
+
+    /* signals */
+    void (*device_added) (SpiceUsbDeviceManager *manager,
+                          SpiceUsbDevice *device);
+    void (*device_removed) (SpiceUsbDeviceManager *manager,
+                            SpiceUsbDevice *device);
+    void (*device_changed) (SpiceUsbDeviceManager *manager,
+                            SpiceUsbDevice *device);
+    void (*device_error) (SpiceUsbDeviceManager *manager,
+                          SpiceUsbDevice *device, GError *error);
+    /*< private >*/
+};
 
 typedef guint SpiceSession;
 
