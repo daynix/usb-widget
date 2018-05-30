@@ -1,0 +1,442 @@
+/* -*- Mode: C; c-basic-offset: 4; indent-tabs-mode: nil -*- */
+
+#include <gtk/gtk.h>
+#include <usb-device-manager.h>
+
+// this is the structure behind SpiceUsbDevice
+typedef struct _SpiceUsbDeviceInfo {
+    guint8  busnum;
+    guint8  devaddr;
+    guint16 vid;
+    guint16 pid;
+
+    gboolean redirecting;
+    gboolean cd;
+    gboolean connected;
+
+    GPtrArray *luns_array;
+} SpiceUsbDeviceInfo;
+
+struct _SpiceUsbDeviceManager
+{
+    guint max_luns;
+};
+
+static SpiceUsbDeviceManager _usb_dev_manager = {
+    .max_luns = 4
+};
+
+static SpiceUsbDeviceInfo _dev_array[] = {
+    {
+        .busnum = 22, .devaddr = 2, .vid = 1200, .pid = 12,
+        .redirecting = TRUE, .cd = TRUE, .connected = FALSE,
+        .luns_array = NULL 
+    },
+    {
+        .busnum = 77, .devaddr = 7, .vid = 1700, .pid = 17,
+        .redirecting = TRUE, .cd = FALSE, .connected = FALSE,
+        .luns_array = NULL
+    },
+    {
+        .busnum = 99, .devaddr = 9, .vid = 1900, .pid = 19,
+        .redirecting = FALSE, .cd = FALSE, .connected = FALSE,
+        .luns_array = NULL
+    },
+};
+
+static GPtrArray *_dev_ptr_array = NULL;
+
+SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
+                                                    GError **err)
+{
+    if (_dev_ptr_array == NULL) {
+        spice_usb_device_lun_info lun_info;
+        guint i;
+
+        _dev_ptr_array = g_ptr_array_new();
+        for (i = 0; i < G_N_ELEMENTS(_dev_array); i++) {
+            /* allocate empty lun array */
+            _dev_array[i].luns_array = g_ptr_array_new();
+                                            
+            /* add usb device to the global list */
+            g_ptr_array_add(_dev_ptr_array, (gpointer)&_dev_array[i]);
+        }
+
+        /* add lun 1 */
+        lun_info.file_path = "/home/johnd/iso/fedora-25.iso";
+        lun_info.vendor = "RedHat";
+        lun_info.product = "Redir DVD";
+        lun_info.revision = "1223";
+        lun_info.alias = "my_fedora_25";
+        lun_info.started = TRUE;
+        lun_info.loaded = TRUE;
+        lun_info.locked = FALSE;
+        
+        spice_usb_device_manager_add_cd_lun(&_usb_dev_manager, &lun_info);
+
+        /* add lun 2 */
+        lun_info.file_path = "/home/johnd/iso/ubuntu-18-04.iso";
+        lun_info.alias = "my_ubuntu_18_04";
+        
+        spice_usb_device_manager_add_cd_lun(&_usb_dev_manager, &lun_info);
+    }
+    return &_usb_dev_manager;
+}
+
+GPtrArray *spice_usb_device_manager_get_devices(SpiceUsbDeviceManager *manager)
+{
+    return _dev_ptr_array;
+}
+
+GPtrArray* spice_usb_device_manager_get_devices_with_filter(
+    SpiceUsbDeviceManager *manager, const gchar *filter)
+{
+    return _dev_ptr_array;
+}
+
+guint8 spice_usb_device_get_busnum(const SpiceUsbDevice *device)
+{
+    const SpiceUsbDeviceInfo *info = (const SpiceUsbDeviceInfo *)device;
+
+    g_return_val_if_fail(info != NULL, 0);
+
+    return info->busnum;
+}
+
+guint8 spice_usb_device_get_devaddr(const SpiceUsbDevice *device)
+{
+    const SpiceUsbDeviceInfo *info = (const SpiceUsbDeviceInfo *)device;
+
+    g_return_val_if_fail(info != NULL, 0);
+
+    return info->devaddr;
+}
+
+guint16 spice_usb_device_get_vid(const SpiceUsbDevice *device)
+{
+    const SpiceUsbDeviceInfo *info = (const SpiceUsbDeviceInfo *)device;
+
+    g_return_val_if_fail(info != NULL, 0);
+
+    return info->vid;
+}
+
+guint16 spice_usb_device_get_pid(const SpiceUsbDevice *device)
+{
+    const SpiceUsbDeviceInfo *info = (const SpiceUsbDeviceInfo *)device;
+
+    g_return_val_if_fail(info != NULL, 0);
+
+    return info->pid;
+}
+
+void spice_usb_util_get_device_strings(int bus, int address,
+                                       int vendor_id, int product_id,
+                                       gchar **manufacturer, gchar **product)
+{
+    *manufacturer = "Spice-USB";
+    *product = "Redir-USB";
+}
+
+void spice_usb_device_get_strings(const SpiceUsbDevice *device,
+                                  gchar **manufacturer, gchar **product)
+{
+    const SpiceUsbDeviceInfo *info = (const SpiceUsbDeviceInfo *)device;
+
+    spice_usb_util_get_device_strings(info->busnum, info->devaddr,
+                                      info->vid, info->pid,
+                                      manufacturer, product);
+
+}
+
+/**
+ * spice_usb_device_get_description:
+ * @device: #SpiceUsbDevice to get the description of
+ * @format: (allow-none): an optional printf() format string with
+ * positional parameters
+ *
+ * Get a string describing the device which is suitable as a description of
+ * the device for the end user. The returned string should be freed with
+ * g_free() when no longer needed.
+ *
+ * The @format positional parameters are the following:
+ * - '%%1$s' manufacturer
+ * - '%%2$s' product
+ * - '%%3$s' descriptor (a [vendor_id:product_id] string)
+ * - '%%4$d' bus
+ * - '%%5$d' address
+ *
+ * (the default format string is "%%s %%s %%s at %%d-%%d")
+ *
+ * Returns: a newly-allocated string holding the description, or %NULL if failed
+ */
+gchar *spice_usb_device_get_description(SpiceUsbDevice *device, const gchar *format)
+{
+#ifdef USE_USBREDIR
+    guint16 bus, address, vid, pid;
+    gchar *description, *descriptor, *manufacturer = NULL, *product = NULL;
+
+    g_return_val_if_fail(device != NULL, NULL);
+
+    bus     = spice_usb_device_get_busnum(device);
+    address = spice_usb_device_get_devaddr(device);
+    vid     = spice_usb_device_get_vid(device);
+    pid     = spice_usb_device_get_pid(device);
+
+    if ((vid > 0) && (pid > 0)) {
+        descriptor = g_strdup_printf("[%04x:%04x]", vid, pid);
+    } else {
+        descriptor = g_strdup("");
+    }
+
+    spice_usb_util_get_device_strings(bus, address, vid, pid,
+                                      &manufacturer, &product);
+
+    if (!format)
+        format = _("%s %s %s at %d-%d");
+
+    description = g_strdup_printf(format, manufacturer, product, descriptor, bus, address);
+
+    g_free(manufacturer);
+    g_free(descriptor);
+    g_free(product);
+
+    return description;
+#else
+    return NULL;
+#endif
+}
+
+
+gboolean spice_usb_device_manager_is_device_connected(SpiceUsbDeviceManager *manager,
+                                                      SpiceUsbDevice *device)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    return dev_info->connected;
+}
+
+gboolean spice_usb_device_manager_connect_device_sync(SpiceUsbDeviceManager *self,
+                                                      SpiceUsbDevice *device)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    if (!dev_info->connected) {
+        dev_info->connected = TRUE;
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+gboolean spice_usb_device_manager_disconnect_device_sync(SpiceUsbDeviceManager *self,
+                                                         SpiceUsbDevice *device)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    if (dev_info->connected) {
+        dev_info->connected = FALSE;
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+gboolean
+spice_usb_device_manager_can_redirect_device(SpiceUsbDeviceManager  *self,
+                                             SpiceUsbDevice         *device,
+                                             GError                **err)
+{
+    return TRUE;
+}
+
+gboolean spice_usb_device_manager_is_redirecting(SpiceUsbDeviceManager *self)
+{
+    return TRUE;
+}
+
+gboolean spice_usb_device_manager_is_device_cd(SpiceUsbDeviceManager *self,
+                                               SpiceUsbDevice *device)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    return dev_info->cd;
+}
+
+gboolean spice_usb_device_manager_device_max_luns(SpiceUsbDeviceManager *self,
+                                                  SpiceUsbDevice *device)
+{
+    SpiceUsbDeviceManager *dev_mgr = (SpiceUsbDeviceManager *)self;
+    return dev_mgr->max_luns;
+}
+
+/* array of guint LUN indices */
+GArray *spice_usb_device_manager_get_device_luns(SpiceUsbDeviceManager *self,
+                                                SpiceUsbDevice *device)
+{
+    SpiceUsbDeviceManager *dev_mgr = (SpiceUsbDeviceManager *)self;
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    GArray *lun_array = g_array_new (FALSE, FALSE, sizeof(guint));
+    guint i;
+
+    for (i = 0;  i < dev_info->luns_array->len; i++) {
+        g_array_append_val(lun_array, i);
+    }
+
+    return lun_array;
+}
+
+static void spice_usb_device_manager_copy_lun_info(spice_usb_device_lun_info *new_lun_info,
+    spice_usb_device_lun_info *lun_info)
+{
+    new_lun_info->file_path = g_strdup(lun_info->file_path);
+    new_lun_info->vendor = g_strdup(lun_info->vendor);
+    new_lun_info->product = g_strdup(lun_info->product);
+    new_lun_info->revision = g_strdup(lun_info->revision);
+    new_lun_info->alias = g_strdup(lun_info->alias);
+    new_lun_info->started = lun_info->started;
+    new_lun_info->loaded = lun_info->loaded;
+    new_lun_info->locked = lun_info->locked;
+}
+
+/* CD LUN will be attached to a (possibly new) USB device automatically */
+gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
+                                             spice_usb_device_lun_info *lun_info)
+{
+    SpiceUsbDeviceManager *dev_mgr = (SpiceUsbDeviceManager *)self;
+    guint num_usb_devs = _dev_ptr_array->len;
+    guint i;
+
+    for (i = 0; i < num_usb_devs; i++) {
+        SpiceUsbDeviceInfo *dev_info = g_ptr_array_index(_dev_ptr_array, i);
+        guint num_luns = dev_info->luns_array->len;
+        if (num_luns < dev_mgr->max_luns) {
+            spice_usb_device_lun_info *new_lun_info = g_malloc(sizeof(*lun_info));
+            spice_usb_device_manager_copy_lun_info(new_lun_info, lun_info);
+            g_ptr_array_add(dev_info->luns_array, new_lun_info);
+            g_print("file:%s vendor:%s prod:%s rev:%s alias:%s started:%d loaded:%d locked:%d\n",
+                    lun_info->file_path,
+                    lun_info->vendor,
+                    lun_info->product,
+                    lun_info->revision,
+                    lun_info->alias,
+                    lun_info->started,
+                    lun_info->loaded,
+                    lun_info->locked);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* Get CD LUN info, intended primarily for enumerating LUNs */
+gboolean
+spice_usb_device_manager_device_lun_get_info(SpiceUsbDeviceManager *self,
+                                             SpiceUsbDevice *device,
+                                             guint lun,
+                                             spice_usb_device_lun_info *lun_info)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    spice_usb_device_lun_info *req_lun_info;
+
+    if (lun >= dev_info->luns_array->len) {
+        return FALSE;
+    }
+    req_lun_info = g_ptr_array_index(dev_info->luns_array, lun);
+    spice_usb_device_manager_copy_lun_info(lun_info, req_lun_info);
+    return TRUE;
+}
+
+/* lock or unlock device */
+gboolean
+spice_usb_device_manager_device_lun_lock(SpiceUsbDeviceManager *self,
+                                         SpiceUsbDevice *device,
+                                         guint lun,
+                                         gboolean lock)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    spice_usb_device_lun_info *req_lun_info;
+
+    if (lun >= dev_info->luns_array->len) {
+        return FALSE;
+    }
+    req_lun_info = g_ptr_array_index(dev_info->luns_array, lun);
+
+    if (!req_lun_info->locked && lock) {
+        req_lun_info->locked = TRUE;
+        return TRUE;
+    } else if (req_lun_info->locked && !lock) {
+        req_lun_info->locked = FALSE;
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+/* load or eject device */
+gboolean
+spice_usb_device_manager_device_lun_load(SpiceUsbDeviceManager *self,
+                                         SpiceUsbDevice *device,
+                                         guint lun,
+                                         gboolean load)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    spice_usb_device_lun_info *req_lun_info;
+
+    if (lun >= dev_info->luns_array->len) {
+        return FALSE;
+    }
+    req_lun_info = g_ptr_array_index(dev_info->luns_array, lun);
+ 
+    if (!req_lun_info->loaded && load) {
+        req_lun_info->loaded = TRUE;
+        return TRUE;
+    } else if (req_lun_info->loaded && !load) {
+        req_lun_info->loaded = FALSE;
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+/* change the media - device must be not currently loaded */
+
+gboolean
+spice_usb_device_manager_device_lun_change_media(SpiceUsbDeviceManager *self,
+                                                 SpiceUsbDevice *device,
+                                                 guint lun,
+                                                 gchar *filename)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    spice_usb_device_lun_info *req_lun_info;
+
+    if (lun >= dev_info->luns_array->len) {
+        return FALSE;
+    }
+    req_lun_info = g_ptr_array_index(dev_info->luns_array, lun);
+
+    if (!req_lun_info->loaded) {
+        if (req_lun_info->file_path != NULL) {
+            g_free((gpointer)req_lun_info->file_path);
+        }
+        req_lun_info->file_path = g_strdup(filename);
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+/* remove lun from the usb device */
+gboolean
+spice_usb_device_manager_device_lun_remove(SpiceUsbDeviceManager *self,
+                                           SpiceUsbDevice *device,
+                                           guint lun)
+{
+    SpiceUsbDeviceInfo *dev_info = (SpiceUsbDeviceInfo *)device;
+    spice_usb_device_lun_info *req_lun_info;
+
+    if (lun >= dev_info->luns_array->len) {
+        return FALSE;
+    }
+
+    req_lun_info = g_ptr_array_index(dev_info->luns_array, lun);
+    g_ptr_array_remove_index(dev_info->luns_array, lun);
+    g_free(req_lun_info);
+    return TRUE;
+}
