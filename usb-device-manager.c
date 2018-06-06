@@ -380,43 +380,60 @@ static void spice_usb_device_manager_copy_lun_info(spice_usb_device_lun_info *ne
     new_lun_info->locked = lun_info->locked;
 }
 
+static void spice_usb_device_manager_add_lun_to_dev(SpiceUsbDevice *dev_info,
+                                                    spice_usb_device_lun_info *lun_info,
+                                                    gint dev_index, gint lun_index)
+{
+    spice_usb_device_lun_info *new_lun_info = g_malloc(sizeof(*lun_info));
+    spice_usb_device_manager_copy_lun_info(new_lun_info, lun_info);
+    g_ptr_array_add(dev_info->luns_array, new_lun_info);
+    g_print("add_cd_lun file:%s vendor:%s prod:%s rev:%s alias:%s "
+            "started:%d loaded:%d locked:%d - usb dev:%d [%d:%d] as lun:%d\n",
+            lun_info->file_path,
+            lun_info->vendor,
+            lun_info->product,
+            lun_info->revision,
+            lun_info->alias,
+            lun_info->started,
+            lun_info->loaded,
+            lun_info->locked,
+            dev_index,
+            (gint)spice_usb_device_get_busnum(dev_info),
+            (gint)spice_usb_device_get_devaddr(dev_info),
+            lun_index);
+}
+
 /* CD LUN will be attached to a (possibly new) USB device automatically */
 gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
                                              spice_usb_device_lun_info *lun_info)
 {
     SpiceUsbDeviceManagerPrivate *priv = self->priv;
     guint num_usb_devs = (_dev_ptr_array != NULL) ? _dev_ptr_array->len : 0;
-    guint i;
+    SpiceUsbDevice *dev_info;
+    guint dev_ind, num_luns;
 
-    for (i = 0; i < num_usb_devs; i++) {
-        SpiceUsbDevice *dev_info = g_ptr_array_index(_dev_ptr_array, i);
-        guint num_luns = dev_info->luns_array->len;
+    for (dev_ind = 0; dev_ind < num_usb_devs; dev_ind++) {
+        dev_info = g_ptr_array_index(_dev_ptr_array, dev_ind);
+        num_luns = dev_info->luns_array->len;
         if (num_luns < priv->max_luns) {
-            spice_usb_device_lun_info *new_lun_info = g_malloc(sizeof(*lun_info));
-            spice_usb_device_manager_copy_lun_info(new_lun_info, lun_info);
-            g_ptr_array_add(dev_info->luns_array, new_lun_info);
-            g_print("add_cd_lun file:%s vendor:%s prod:%s rev:%s alias:%s "
-                    "started:%d loaded:%d locked:%d - usb dev:%d [%d:%d] as lun:%d\n",
-                    lun_info->file_path,
-                    lun_info->vendor,
-                    lun_info->product,
-                    lun_info->revision,
-                    lun_info->alias,
-                    lun_info->started,
-                    lun_info->loaded,
-                    lun_info->locked,
-                    i, /* usb device index */
-                    (gint)spice_usb_device_get_busnum(dev_info),
-                    (gint)spice_usb_device_get_devaddr(dev_info),
-                    num_luns);
-
+            spice_usb_device_manager_add_lun_to_dev(dev_info, lun_info, dev_ind, num_luns);
             if (_is_initialized) {
-                g_signal_emit(self, signals[DEVICE_ADDED], 0, dev_info);
+                g_signal_emit(self, signals[DEVICE_CHANGED], 0, dev_info);
             }
             return TRUE;
         }
     }
-    return FALSE;
+    /* allocate new usb device */
+    dev_info = g_malloc(sizeof(*dev_info));
+    memcpy(dev_info, &_dev_array[0], sizeof(*dev_info));
+    dev_info->luns_array = g_ptr_array_new();
+    g_ptr_array_add(_dev_ptr_array, (gpointer)dev_info);
+    /* add the new LUN to it */
+    spice_usb_device_manager_add_lun_to_dev(dev_info, lun_info, num_usb_devs, 0);
+    if (_is_initialized) {
+        g_signal_emit(self, signals[DEVICE_ADDED], 0, dev_info);
+    }
+    return TRUE;
 }
 
 /* Get CD LUN info, intended primarily for enumerating LUNs */
@@ -527,5 +544,12 @@ spice_usb_device_manager_device_lun_remove(SpiceUsbDeviceManager *self,
     req_lun_info = g_ptr_array_index(device->luns_array, lun);
     g_ptr_array_remove_index(device->luns_array, lun);
     g_free(req_lun_info);
+
+    if (device->luns_array->len == 0) {
+        g_ptr_array_remove(_dev_ptr_array, (gpointer)device);
+        if (_is_initialized) {
+            g_signal_emit(self, signals[DEVICE_REMOVED], 0, device);
+        }
+    }
     return TRUE;
 }

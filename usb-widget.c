@@ -88,27 +88,47 @@ static void device_added_cb(SpiceUsbDeviceManager *usb_dev_mgr,
 {
     GtkWidget *tree_view = (GtkWidget *)user_data;
     GtkTreeModel *tree_model = (GtkTreeModel *)gtk_tree_view_get_model(GTK_TREE_VIEW(tree_view));
-    GtkTreeIter *old_dev_iter;
 
     g_print("Signal: Device Added\n");
 
-    old_dev_iter = tree_find_usb_device(tree_model, usb_device);
-    usb_widget_treestore_add_device(GTK_TREE_STORE(tree_model), old_dev_iter, usb_dev_mgr, usb_device);
+    usb_widget_treestore_add_device(GTK_TREE_STORE(tree_model), NULL, usb_dev_mgr, usb_device);
     gtk_widget_show_all(tree_view);
 }
 
 static void device_removed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
     SpiceUsbDevice *usb_device, gpointer user_data)
 {
-    GtkTreeStore *treestore = (GtkTreeStore *)user_data;
-    g_print("Signal: Device Remove, tree:%p\n", treestore);
+    GtkWidget *tree_view = (GtkWidget *)user_data;
+    GtkTreeModel *tree_model = (GtkTreeModel *)gtk_tree_view_get_model(GTK_TREE_VIEW(tree_view));
+    GtkTreeIter *old_dev_iter;
+
+    g_print("Signal: Device Removed\n");
+
+    old_dev_iter = tree_find_usb_device(tree_model, usb_device);
+    if (old_dev_iter != NULL) {
+        gtk_tree_store_remove(GTK_TREE_STORE(tree_model), old_dev_iter);
+        gtk_widget_show_all(tree_view);
+    } else {
+        g_print("Device not found!\n");
+    }
 }
 
 static void device_changed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
     SpiceUsbDevice *usb_device, gpointer user_data)
 {
-    GtkTreeStore *treestore = (GtkTreeStore *)user_data;
-    g_print("Signal: Device Changed, tree:%p\n", treestore);
+    GtkWidget *tree_view = (GtkWidget *)user_data;
+    GtkTreeModel *tree_model = (GtkTreeModel *)gtk_tree_view_get_model(GTK_TREE_VIEW(tree_view));
+    GtkTreeIter *old_dev_iter;
+
+    g_print("Signal: Device Changed\n");
+
+    old_dev_iter = tree_find_usb_device(tree_model, usb_device);
+    if (old_dev_iter != NULL) {
+        usb_widget_treestore_add_device(GTK_TREE_STORE(tree_model), old_dev_iter, usb_dev_mgr, usb_device);
+        gtk_widget_show_all(tree_view);
+    } else {
+        g_print("Device not found!\n");
+    }
 }
 
 static void device_error_cb(SpiceUsbDeviceManager *manager,
