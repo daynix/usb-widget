@@ -4,6 +4,7 @@
 enum column_id
 {
     COL_ADDRESS = 0,
+    COL_CD_ICON,
     COL_VENDOR,
     COL_PRODUCT,
     COL_REVISION,
@@ -13,16 +14,20 @@ enum column_id
     COL_LOCKED,
     COL_FILE,
     /* flag columns */
+    COL_CD_DEV,
     COL_LUN_ITEM,
     COL_ITEM_DATA,
     COL_ROW_COLOR,
     COL_ROW_COLOR_SET,
-    NUM_COLS
+    NUM_COLS,
+
+    INVALID_COL
 };
 
 static const char *col_name[NUM_COLS] =
 {
     "Address",
+    "CD",
     "Vendor",
     "Product", 
     "Revision",
@@ -32,6 +37,7 @@ static const char *col_name[NUM_COLS] =
     "Locked",
     "File/Device Path",
     /* should not be displayed */
+    "?CD_DEV",
     "?LUN_ITEM",
     "?ITEM_DATA",
     "?ROW_COLOR",
@@ -138,12 +144,21 @@ static void device_error_cb(SpiceUsbDeviceManager *manager,
     g_print("Signal: Device Error, tree:%p\n", treestore);
 }
 
+static GdkPixbuf *get_named_icon(const gchar *name, gint size)
+{
+    GtkIconInfo *info = gtk_icon_theme_lookup_icon(gtk_icon_theme_get_default(), name, size, 0);
+    GdkPixbuf *pixbuf = gtk_icon_info_load_icon(info, NULL);
+    g_object_unref (info);
+    return pixbuf;
+}
+
 static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
                                             GtkTreeIter *old_dev_iter,
                                             SpiceUsbDeviceManager *usb_dev_mgr,
                                             SpiceUsbDevice *usb_device)
 {
     GtkTreeIter new_dev_iter;
+    GdkPixbuf *icon_cd;
     gchar *manufacturer, *product, *addr_str;
     GArray *lun_array;
     guint j;
@@ -155,6 +170,8 @@ static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
         gtk_tree_store_remove(treestore, old_dev_iter);
     }
 
+    icon_cd = get_named_icon("media-optical", 24);
+
     spice_usb_device_get_strings(usb_device, &manufacturer, &product);
     //(gint)spice_usb_device_get_vid(usb_device),
     //(gint)spice_usb_device_get_pid(usb_device));
@@ -165,8 +182,10 @@ static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
 
     gtk_tree_store_set(treestore, &new_dev_iter,
         COL_ADDRESS, addr_str,
+        COL_CD_ICON, icon_cd,
         COL_VENDOR, manufacturer,
         COL_PRODUCT, product,
+        COL_CD_DEV, spice_usb_device_manager_is_device_cd(usb_dev_mgr, usb_device),
         COL_LUN_ITEM, FALSE, /* USB device item */
         COL_ITEM_DATA, (gpointer)usb_device,
         COL_ROW_COLOR, "beige",
@@ -202,6 +221,7 @@ static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
                 COL_LOADED, lun_item->info.loaded,
                 COL_LOCKED, lun_item->info.locked,
                 COL_FILE, lun_item->info.file_path,
+                COL_CD_DEV, FALSE,
                 COL_LUN_ITEM, TRUE, /* LUN item */
                 COL_ITEM_DATA, (gpointer)lun_item,
                 COL_ROW_COLOR, "azure",
@@ -219,6 +239,7 @@ static GtkTreeModel* create_and_fill_model(SpiceUsbDeviceManager *usb_dev_mgr)
 
     treestore = gtk_tree_store_new(NUM_COLS,
                         G_TYPE_STRING, /* COL_ADDRESS */
+                        GDK_TYPE_PIXBUF, /* COL_CD_ICON */
                         G_TYPE_STRING, /* COL_VENDOR */
                         G_TYPE_STRING, /* COL_PRODUCT */
                         G_TYPE_STRING, /* COL_ADDR_REV */
@@ -227,10 +248,11 @@ static GtkTreeModel* create_and_fill_model(SpiceUsbDeviceManager *usb_dev_mgr)
                         G_TYPE_BOOLEAN, /* COL_LOADED */
                         G_TYPE_BOOLEAN, /* COL_LOCKED */
                         G_TYPE_STRING, /* COL_FILE */
+                        G_TYPE_BOOLEAN, /* COL_CD_DEV */
                         G_TYPE_BOOLEAN, /* COL_LUN_ITEM */
                         G_TYPE_POINTER, /* COL_ITEM_DATA */
                         G_TYPE_STRING, /* COL_ROW_COLOR */
-                        G_TYPE_BOOLEAN); /* COL_ROW_COLOR_SET */
+                        G_TYPE_BOOLEAN /* COL_ROW_COLOR_SET */ );
     g_print("tree store created\n");
 
     usb_dev_list = spice_usb_device_manager_get_devices(usb_dev_mgr);
@@ -381,6 +403,41 @@ static GtkTreeViewColumn* view_add_toggle_column(GtkWidget *view, GtkTreeModel *
     return view_col;
 }
 
+static GtkTreeViewColumn* view_add_pixbuf_column(GtkWidget *view, GtkTreeModel *model,
+                                                 enum column_id col_id,
+                                                 enum column_id visible_col_id)
+{
+    GtkCellRenderer     *renderer;
+    GtkTreeViewColumn   *view_col;
+
+    renderer = gtk_cell_renderer_pixbuf_new();
+
+    if (visible_col_id == INVALID_COL) {
+        view_col = gtk_tree_view_column_new_with_attributes(
+                        col_name[col_id],
+                        renderer,
+                        "pixbuf", col_id,
+                        NULL);
+    } else {
+        view_col = gtk_tree_view_column_new_with_attributes(
+                        col_name[col_id],
+                        renderer,
+                        "pixbuf", col_id,
+                        "visible", visible_col_id,
+                        //"cell-background", COL_ROW_COLOR,
+                        //"cell-background-set", COL_ROW_COLOR_SET,
+                        NULL);
+    }
+
+    gtk_tree_view_append_column(GTK_TREE_VIEW(view), view_col);
+
+    //g_object_set_data(G_OBJECT(renderer), "column", (gint *)col_id);
+    //g_signal_connect(renderer, "toggled", G_CALLBACK(toggled_cb), model);
+
+    g_print("view added pixbuf column [%d : %s]\n", col_id, col_name[col_id]);
+    return view_col;
+}
+
 static void tree_selection_changed_cb(GtkTreeSelection *select, gpointer data)
 {
     GtkTreeModel *model;
@@ -436,6 +493,107 @@ static GtkTreeSelection* set_selection_handler(GtkWidget* view)
     return select;
 }
 
+static void view_popup_menu_on_eject(GtkWidget *menuitem, gpointer userdata)
+{
+    /* we passed the view as userdata when we connected the signal */
+    GtkTreeView *treeview = GTK_TREE_VIEW(userdata);
+    g_print ("Do Eject!\n");
+}
+
+static void view_popup_menu_on_remove(GtkWidget *menuitem, gpointer userdata)
+{
+    /* we passed the view as userdata when we connected the signal */
+    GtkTreeView *treeview = GTK_TREE_VIEW(userdata);
+    g_print ("Do Remove!\n");
+}
+
+static void view_popup_menu_on_settings(GtkWidget *menuitem, gpointer userdata)
+{
+    /* we passed the view as userdata when we connected the signal */
+    GtkTreeView *treeview = GTK_TREE_VIEW(userdata);
+    g_print ("Do Settings!\n");
+}
+
+static GtkWidget *view_popup_add_menu_item(GtkWidget *menu,
+    const gchar *label_str,
+    const gchar *icon_name,
+    GCallback cb_func, gpointer userdata)
+{
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *menu_item = gtk_menu_item_new();
+    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name, GTK_ICON_SIZE_MENU);
+    GtkWidget *label = gtk_accel_label_new(label_str);
+    GtkAccelGroup *accel_group = gtk_accel_group_new();
+    guint accel_key;
+
+    g_signal_connect(menu_item, "activate", cb_func, userdata);
+
+    /* add icon */
+    gtk_container_add(GTK_CONTAINER(box), icon);
+
+    /* add label */
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_label_set_use_underline(GTK_LABEL(label), TRUE);
+    g_object_get(G_OBJECT(label), "mnemonic-keyval", &accel_key, NULL);
+    gtk_widget_add_accelerator(menu_item, "activate", accel_group, accel_key,
+                               GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_accel_label_set_accel_widget(GTK_ACCEL_LABEL(label), menu_item);
+    gtk_box_pack_end(GTK_BOX(box), label, TRUE, TRUE, 0);
+
+    /* add menu item */
+    gtk_container_add(GTK_CONTAINER(menu_item), box);
+    gtk_widget_show_all(menu_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
+
+    return menu_item;
+}
+
+static void view_popup_menu(GtkWidget *treeview, GdkEventButton *event, gpointer userdata)
+{
+    GtkWidget *menu, *menu_item;
+
+    menu = gtk_menu_new();
+
+    menu_item = view_popup_add_menu_item(menu, "_Eject", "media-eject", G_CALLBACK(view_popup_menu_on_eject), userdata);
+    menu_item = view_popup_add_menu_item(menu, "_Settings", "preferences-system", G_CALLBACK(view_popup_menu_on_settings), userdata);
+    menu_item = view_popup_add_menu_item(menu, "_Remove", "edit-delete", G_CALLBACK(view_popup_menu_on_remove), userdata);
+
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), NULL);
+}
+
+static gboolean treeview_on_button_pressed_cb(GtkWidget *treeview, GdkEventButton *event, gpointer userdata)
+{
+    /* single click with the right mouse button? */
+    if (event->type == GDK_BUTTON_PRESS  &&  event->button == 3)
+    {
+        GtkTreeSelection *selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(treeview));
+        if (gtk_tree_selection_count_selected_rows(selection)  <= 1) {
+            GtkTreePath *path;
+            /* Get tree path for row that was clicked */
+            if (gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(treeview),
+                                                (gint) event->x,
+                                                (gint) event->y,
+                                                &path, NULL, NULL, NULL))
+            {
+                gtk_tree_selection_unselect_all(selection);
+                gtk_tree_selection_select_path(selection, path);
+                gtk_tree_path_free(path);
+            }
+        }
+        view_popup_menu(treeview, event, userdata);
+        return TRUE; /* we handled this */
+    } else {
+        return FALSE; /* we did not handle this */
+    }
+}
+
+static gboolean treeview_on_popup_menu_cb(GtkWidget *treeview, gpointer userdata)
+{
+    view_popup_menu(treeview, NULL, userdata);
+    return TRUE; /* we handled this */
+}
+
 static void view_signals_connect(GtkWidget *view,
                                  SpiceUsbDeviceManager *usb_dev_mgr)
 {
@@ -447,6 +605,11 @@ static void view_signals_connect(GtkWidget *view,
                      G_CALLBACK(device_changed_cb), view);
     g_signal_connect(usb_dev_mgr, "device-error",
                      G_CALLBACK(device_error_cb), view);
+
+    g_signal_connect(view, "button-press-event",
+                     G_CALLBACK(treeview_on_button_pressed_cb), NULL);
+    g_signal_connect(view, "popup-menu",
+                     G_CALLBACK(treeview_on_popup_menu_cb), NULL);
 }
 
 static GtkWidget* create_view_and_model (void)
@@ -467,6 +630,9 @@ static GtkWidget* create_view_and_model (void)
     //gtk_tree_view_set_search_column(GTK_TREE_VIEW (view), COL_VENDOR);
 
     view_add_text_column(view, COL_ADDRESS);
+
+    view_add_pixbuf_column(view, model, COL_CD_ICON, COL_CD_DEV);
+
     view_add_text_column(view, COL_VENDOR);
     view_add_text_column(view, COL_PRODUCT);
     view_add_text_column(view, COL_REVISION);
