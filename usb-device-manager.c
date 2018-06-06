@@ -26,17 +26,17 @@ struct _SpiceUsbDeviceManagerPrivate {
 
 static SpiceUsbDevice _dev_array[] = {
     {
-        .busnum = 22, .devaddr = 2, .vid = 1200, .pid = 12,
+        .vid = 1200, .pid = 12,
         .redirecting = TRUE, .cd = TRUE, .connected = FALSE,
         .luns_array = NULL 
     },
     {
-        .busnum = 77, .devaddr = 7, .vid = 1700, .pid = 17,
+        .vid = 1700, .pid = 17,
         .redirecting = TRUE, .cd = FALSE, .connected = FALSE,
         .luns_array = NULL
     },
     {
-        .busnum = 99, .devaddr = 9, .vid = 1900, .pid = 19,
+        .vid = 1900, .pid = 19,
         .redirecting = FALSE, .cd = FALSE, .connected = FALSE,
         .luns_array = NULL
     },
@@ -158,9 +158,10 @@ SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
 
         _dev_ptr_array = g_ptr_array_new();
         for (i = 0; i < G_N_ELEMENTS(_dev_array); i++) {
+            _dev_array[i].busnum = 10 * (i + 1);
+            _dev_array[i].devaddr = i + 1;
             /* allocate empty lun array */
             _dev_array[i].luns_array = g_ptr_array_new();
-                                            
             /* add usb device to the global list */
             g_ptr_array_add(_dev_ptr_array, (gpointer)&_dev_array[i]);
         }
@@ -414,6 +415,9 @@ gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
 
     for (dev_ind = 0; dev_ind < num_usb_devs; dev_ind++) {
         dev_info = g_ptr_array_index(_dev_ptr_array, dev_ind);
+        if (!spice_usb_device_manager_is_device_cd(self, dev_info)) {
+            continue;
+        }
         num_luns = dev_info->luns_array->len;
         if (num_luns < priv->max_luns) {
             spice_usb_device_manager_add_lun_to_dev(dev_info, lun_info, dev_ind, num_luns);
@@ -425,7 +429,11 @@ gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
     }
     /* allocate new usb device */
     dev_info = g_malloc(sizeof(*dev_info));
+    /* generate some usb dev info */
     memcpy(dev_info, &_dev_array[0], sizeof(*dev_info));
+    dev_info->devaddr ++;
+    dev_info->busnum = 10 * dev_info->devaddr;
+
     dev_info->luns_array = g_ptr_array_new();
     g_ptr_array_add(_dev_ptr_array, (gpointer)dev_info);
     /* add the new LUN to it */
