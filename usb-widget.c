@@ -90,6 +90,20 @@ static GtkTreeIter *tree_find_usb_device(GtkTreeModel *tree_model,
     return find_info.dev_iter;
 }
 
+#if 0
+static void tree_delete_device(GtkTreeModel *tree_model, GtkTreeIter *old_dev_iter)
+{
+    GtkTreeIter child_iter;
+    gboolean iter_set;
+
+    iter_set = gtk_tree_model_iter_children(tree_model, &child_iter, old_dev_iter);
+    while (iter_set) {
+        iter_set = gtk_tree_store_remove(GTK_TREE_STORE(tree_model), &child_iter);
+    }
+    gtk_tree_store_remove(GTK_TREE_STORE(tree_model), old_dev_iter);
+}
+#endif
+
 static void device_added_cb(SpiceUsbDeviceManager *usb_dev_mgr,
     SpiceUsbDevice *usb_device, gpointer user_data)
 {
