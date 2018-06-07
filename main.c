@@ -3,7 +3,8 @@
 
 enum column_id
 {
-    COL_ADDRESS = 0,
+    COL_CONNECT = 0,
+    COL_ADDRESS,
     COL_CD_ICON,
     COL_VENDOR,
     COL_PRODUCT,
@@ -16,6 +17,7 @@ enum column_id
     /* flag columns */
     COL_CD_DEV,
     COL_LUN_ITEM,
+    COL_DEV_ITEM,
     COL_ITEM_DATA,
     COL_ROW_COLOR,
     COL_ROW_COLOR_SET,
@@ -26,6 +28,7 @@ enum column_id
 
 static const char *col_name[NUM_COLS] =
 {
+    "Connect",
     "Address",
     "CD",
     "Vendor",
@@ -39,6 +42,7 @@ static const char *col_name[NUM_COLS] =
     /* should not be displayed */
     "?CD_DEV",
     "?LUN_ITEM",
+    "?DEV_ITEM",
     "?ITEM_DATA",
     "?ROW_COLOR",
     "?ROW_COLOR_SET"
@@ -198,12 +202,14 @@ static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
     g_print("usb device a:[%s] p:[%s] m:[%s]\n", addr_str, manufacturer, product);
 
     gtk_tree_store_set(treestore, &new_dev_iter,
+        COL_CONNECT, spice_usb_device_manager_is_device_connected(usb_dev_mgr, usb_device),
         COL_ADDRESS, addr_str,
         COL_CD_ICON, icon_cd,
         COL_VENDOR, manufacturer,
         COL_PRODUCT, product,
         COL_CD_DEV, spice_usb_device_manager_is_device_cd(usb_dev_mgr, usb_device),
         COL_LUN_ITEM, FALSE, /* USB device item */
+        COL_DEV_ITEM, TRUE, /* USB device item */
         COL_ITEM_DATA, (gpointer)usb_device,
         COL_ROW_COLOR, "beige",
         COL_ROW_COLOR_SET, TRUE,
@@ -240,6 +246,7 @@ static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
                 COL_FILE, lun_item->info.file_path,
                 COL_CD_DEV, FALSE,
                 COL_LUN_ITEM, TRUE, /* LUN item */
+                COL_DEV_ITEM, FALSE, /* LUN item */
                 COL_ITEM_DATA, (gpointer)lun_item,
                 COL_ROW_COLOR, "azure",
                 COL_ROW_COLOR_SET, TRUE,
@@ -255,6 +262,7 @@ static GtkTreeModel* create_and_fill_model(SpiceUsbDeviceManager *usb_dev_mgr)
     guint i;
 
     treestore = gtk_tree_store_new(NUM_COLS,
+                        G_TYPE_BOOLEAN, /* COL_CONNECT */
                         G_TYPE_STRING, /* COL_ADDRESS */
                         GDK_TYPE_PIXBUF, /* COL_CD_ICON */
                         G_TYPE_STRING, /* COL_VENDOR */
@@ -267,6 +275,7 @@ static GtkTreeModel* create_and_fill_model(SpiceUsbDeviceManager *usb_dev_mgr)
                         G_TYPE_STRING, /* COL_FILE */
                         G_TYPE_BOOLEAN, /* COL_CD_DEV */
                         G_TYPE_BOOLEAN, /* COL_LUN_ITEM */
+                        G_TYPE_BOOLEAN, /* COL_DEV_ITEM */
                         G_TYPE_POINTER, /* COL_ITEM_DATA */
                         G_TYPE_STRING, /* COL_ROW_COLOR */
                         G_TYPE_BOOLEAN /* COL_ROW_COLOR_SET */ );
@@ -330,6 +339,17 @@ static void tree_item_toggle_set(GtkTreeModel *model, GtkTreeIter *iter, enum co
 }
 
 typedef void (*tree_item_toggled_cb)(GtkCellRendererToggle *, gchar *, gpointer);
+
+static void tree_item_toggled_cb_connect(GtkCellRendererToggle *cell, gchar *path_str, gpointer data)
+{
+    GtkTreeModel *model = (GtkTreeModel *)data;
+    GtkTreeIter iter;
+    gboolean connected;
+
+    connected = tree_item_toggle_get_val(model, path_str, &iter, COL_CONNECT);
+    tree_item_toggle_set(model, &iter, COL_CONNECT, !connected);
+    g_print("Connect!\n");
+}
 
 static void tree_item_toggled_cb_started(GtkCellRendererToggle *cell, gchar *path_str, gpointer data)
 {
@@ -395,6 +415,7 @@ static void tree_item_toggled_cb_loaded(GtkCellRendererToggle *cell, gchar *path
 
 static GtkTreeViewColumn* view_add_toggle_column(GtkWidget *view, GtkTreeModel *model,
                                                  enum column_id col_id,
+                                                 enum column_id visible_col_id,
                                                  tree_item_toggled_cb toggled_cb)
 {
     GtkCellRenderer     *renderer;
@@ -406,7 +427,7 @@ static GtkTreeViewColumn* view_add_toggle_column(GtkWidget *view, GtkTreeModel *
                     col_name[col_id],
                     renderer,
                     "active", col_id,
-                    "visible", COL_LUN_ITEM,
+                    "visible", visible_col_id,
                     //"cell-background", COL_ROW_COLOR,
                     //"cell-background-set", COL_ROW_COLOR_SET,
                     NULL);
@@ -666,6 +687,8 @@ static GtkWidget* create_view_and_model (void)
     //gtk_tree_view_set_rules_hint(GTK_TREE_VIEW (view), TRUE);
     //gtk_tree_view_set_search_column(GTK_TREE_VIEW (view), COL_VENDOR);
 
+    view_add_toggle_column(view, model, COL_CONNECT, COL_DEV_ITEM, tree_item_toggled_cb_connect);
+
     view_add_text_column(view, COL_ADDRESS);
 
     view_add_pixbuf_column(view, model, COL_CD_ICON, COL_CD_DEV);
@@ -675,9 +698,9 @@ static GtkWidget* create_view_and_model (void)
     view_add_text_column(view, COL_REVISION);
     view_add_text_column(view, COL_ALIAS);
 
-    view_add_toggle_column(view, model, COL_STARTED, tree_item_toggled_cb_started);
-    view_add_toggle_column(view, model, COL_LOADED, tree_item_toggled_cb_loaded);
-    view_add_toggle_column(view, model, COL_LOCKED, tree_item_toggled_cb_locked);
+    view_add_toggle_column(view, model, COL_STARTED, COL_LUN_ITEM, tree_item_toggled_cb_started);
+    view_add_toggle_column(view, model, COL_LOADED, COL_LUN_ITEM, tree_item_toggled_cb_loaded);
+    view_add_toggle_column(view, model, COL_LOCKED, COL_LUN_ITEM, tree_item_toggled_cb_locked);
 
     view_add_text_column(view, COL_FILE);
 
