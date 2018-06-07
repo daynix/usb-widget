@@ -75,6 +75,7 @@ static gboolean tree_find_usb_dev_foreach_cb(GtkTreeModel *tree_model,
                        -1);
     if (!is_lun_item && usb_device == find_usb_device) {
         find_info->dev_iter = iter;
+        g_print("Usb dev found %p iter %p\n", usb_device, iter);
         return TRUE; /* stop iterating */
     } else {
         return FALSE; /* continue iterating */
@@ -84,7 +85,7 @@ static gboolean tree_find_usb_dev_foreach_cb(GtkTreeModel *tree_model,
 static GtkTreeIter *tree_find_usb_device(GtkTreeModel *tree_model,
                                          SpiceUsbDevice *usb_device)
 {
-    tree_find_usb_dev find_info = { .usb_dev = usb_device };
+    tree_find_usb_dev find_info = { .usb_dev = usb_device, .dev_iter = NULL };
     gtk_tree_model_foreach(tree_model, tree_find_usb_dev_foreach_cb, (gpointer)&find_info);
     return find_info.dev_iter;
 }
@@ -112,7 +113,9 @@ static void device_removed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
 
     old_dev_iter = tree_find_usb_device(tree_model, usb_device);
     if (old_dev_iter != NULL) {
+        g_print("Remove device iter %p\n", old_dev_iter);
         gtk_tree_store_remove(GTK_TREE_STORE(tree_model), old_dev_iter);
+        g_print("Removed, now show\n");
         gtk_widget_show_all(tree_view);
     } else {
         g_print("Device not found!\n");
@@ -504,7 +507,28 @@ static void view_popup_menu_on_remove(GtkWidget *menuitem, gpointer userdata)
 {
     /* we passed the view as userdata when we connected the signal */
     GtkTreeView *treeview = GTK_TREE_VIEW(userdata);
-    g_print ("Do Remove!\n");
+    GtkTreeSelection *select = gtk_tree_view_get_selection(treeview);
+    GtkTreeModel *model;
+    GtkTreeIter iter;
+    gboolean is_lun;
+
+    if (gtk_tree_selection_get_selected(select, &model, &iter)) {
+        gtk_tree_model_get(model, &iter,
+                       COL_LUN_ITEM, &is_lun,
+                       -1);
+        if (!is_lun) {
+            SpiceUsbDeviceManager *usb_dev_mgr = spice_usb_device_manager_get(NULL, NULL);
+            SpiceUsbDevice *usb_device;
+            gtk_tree_model_get(model, &iter, COL_ITEM_DATA, (gpointer *)&usb_device, -1);
+            g_print("Remove USB device\n");
+        } else {
+            usb_widget_lun_item *lun_item;
+            gtk_tree_model_get(model, &iter, COL_ITEM_DATA, (gpointer *)&lun_item, -1);
+            spice_usb_device_manager_device_lun_remove(lun_item->manager, lun_item->device, lun_item->lun);
+        }
+    } else {
+        g_print("Remove - failed to get selection\n");
+    }
 }
 
 static void view_popup_menu_on_settings(GtkWidget *menuitem, gpointer userdata)
@@ -562,7 +586,7 @@ static void view_popup_menu(GtkWidget *treeview, GdkEventButton *event, gpointer
     gtk_menu_popup_at_pointer(GTK_MENU(menu), NULL);
 }
 
-static gboolean treeview_on_button_pressed_cb(GtkWidget *treeview, GdkEventButton *event, gpointer userdata)
+static gboolean treeview_on_right_button_pressed_cb(GtkWidget *treeview, GdkEventButton *event, gpointer userdata)
 {
     /* single click with the right mouse button? */
     if (event->type == GDK_BUTTON_PRESS  &&  event->button == 3)
@@ -588,14 +612,13 @@ static gboolean treeview_on_button_pressed_cb(GtkWidget *treeview, GdkEventButto
     }
 }
 
-static gboolean treeview_on_popup_menu_cb(GtkWidget *treeview, gpointer userdata)
+static gboolean treeview_on_popup_key_pressed_cb(GtkWidget *treeview, gpointer userdata)
 {
     view_popup_menu(treeview, NULL, userdata);
     return TRUE; /* we handled this */
 }
 
-static void view_signals_connect(GtkWidget *view,
-                                 SpiceUsbDeviceManager *usb_dev_mgr)
+static void view_signals_connect(GtkWidget *view, SpiceUsbDeviceManager *usb_dev_mgr)
 {
     g_signal_connect(usb_dev_mgr, "device-added",
                      G_CALLBACK(device_added_cb), view);
@@ -607,9 +630,9 @@ static void view_signals_connect(GtkWidget *view,
                      G_CALLBACK(device_error_cb), view);
 
     g_signal_connect(view, "button-press-event",
-                     G_CALLBACK(treeview_on_button_pressed_cb), NULL);
+                     G_CALLBACK(treeview_on_right_button_pressed_cb), view);
     g_signal_connect(view, "popup-menu",
-                     G_CALLBACK(treeview_on_popup_menu_cb), NULL);
+                     G_CALLBACK(treeview_on_popup_key_pressed_cb), view);
 }
 
 static GtkWidget* create_view_and_model (void)
