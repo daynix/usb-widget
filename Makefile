@@ -10,7 +10,7 @@ default: $(TARGET)
 all: default
 
 #OBJECTS = $(patsubst %.c, %.o, $(wildcard *.c))
-OBJECTS = usb-device-manager.o usb-widget.o
+OBJECTS = usb-device-manager.o main.o
 #HEADERS = $(wildcard *.h)
 HEADERS = usb-device-manager.h
 
