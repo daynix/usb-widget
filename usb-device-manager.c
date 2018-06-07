@@ -558,6 +558,10 @@ spice_usb_device_manager_device_lun_remove(SpiceUsbDeviceManager *self,
         if (_is_initialized) {
             g_signal_emit(self, signals[DEVICE_REMOVED], 0, device);
         }
+    } else {
+        if (_is_initialized) {
+            g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
+        }
     }
     return TRUE;
 }
