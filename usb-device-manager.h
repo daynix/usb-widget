@@ -34,6 +34,8 @@ G_BEGIN_DECLS
 #define SPICE_IS_USB_DEVICE_MANAGER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), SPICE_TYPE_USB_DEVICE_MANAGER))
 #define SPICE_USB_DEVICE_MANAGER_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), SPICE_TYPE_USB_DEVICE_MANAGER, SpiceUsbDeviceManagerClass))
 
+#define SPICE_TYPE_USB_DEVICE                    G_TYPE_POINTER
+
 typedef struct _SpiceUsbDeviceManager SpiceUsbDeviceManager;
 typedef struct _SpiceUsbDeviceManagerClass SpiceUsbDeviceManagerClass;
 typedef struct _SpiceUsbDeviceManagerPrivate SpiceUsbDeviceManagerPrivate;
@@ -65,6 +67,8 @@ struct _SpiceUsbDeviceManagerClass
     /*< private >*/
 };
 
+GType spice_usb_device_manager_get_type();
+
 typedef guint SpiceSession;
 
 gchar *spice_usb_device_get_description(SpiceUsbDevice *device, const gchar *format);
@@ -85,6 +89,26 @@ gboolean spice_usb_device_manager_connect_device_sync(SpiceUsbDeviceManager *sel
 
 gboolean spice_usb_device_manager_disconnect_device_sync(SpiceUsbDeviceManager *self,
                                                      SpiceUsbDevice *device);
+
+void spice_usb_device_manager_connect_device_async(
+                                             SpiceUsbDeviceManager *self,
+                                             SpiceUsbDevice *device,
+                                             GCancellable *cancellable,
+                                             GAsyncReadyCallback callback,
+                                             gpointer user_data);
+
+void spice_usb_device_manager_disconnect_device_async(
+                                             SpiceUsbDeviceManager *self,
+                                             SpiceUsbDevice *device,
+                                             GCancellable *cancellable,
+                                             GAsyncReadyCallback callback,
+                                             gpointer user_data);
+
+gboolean spice_usb_device_manager_connect_device_finish(
+    SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err);
+
+gboolean spice_usb_device_manager_disconnect_device_finish(
+    SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err);
 
 guint8 spice_usb_device_get_busnum(const SpiceUsbDevice *device);
 guint8 spice_usb_device_get_devaddr(const SpiceUsbDevice *device);

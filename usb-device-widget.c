@@ -20,9 +20,13 @@
 */
 
 #include "config.h"
-#include <glib/gi18n-lib.h>
-#include "spice-client.h"
-#include "spice-marshal.h"
+#ifndef USB_WIDGET_TEST
+    #include <glib/gi18n-lib.h>
+    #include "spice-client.h"
+    #include "spice-marshal.h"
+#else
+    #include "spice-client.h"
+#endif 
 #include "usb-device-widget.h"
 
 /**
@@ -535,10 +539,12 @@ static void checkbox_clicked_cb(GtkWidget *check, gpointer user_data)
     spice_usb_device_widget_update_status(self);
 }
 
+#if 0
 static void checkbox_usb_device_destroy_notify(gpointer data)
 {
     g_boxed_free(spice_usb_device_get_type(), data);
 }
+#endif
 
 static void device_added_cb(SpiceUsbDeviceManager *manager,
     SpiceUsbDevice *device, gpointer user_data)
@@ -551,8 +557,10 @@ static void device_added_cb(SpiceUsbDeviceManager *manager,
     desc = spice_usb_device_get_description(device,
                                             priv->device_format_string);
     check = gtk_check_button_new_with_label(desc);
-    g_free(desc);
+    g_print("%s\n", desc);
+    g_free(desc);    
 
+#if 0
     if (spice_usb_device_manager_is_device_connected(priv->manager,
                                                      device))
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check), TRUE);
@@ -570,6 +578,7 @@ static void device_added_cb(SpiceUsbDeviceManager *manager,
     gtk_box_pack_end(GTK_BOX(self), align, FALSE, FALSE, 0);
     spice_usb_device_widget_update_status(self);
     gtk_widget_show_all(align);
+#endif
 }
 
 static void destroy_widget_by_usb_device(GtkWidget *widget, gpointer user_data)
@@ -585,6 +594,14 @@ static void device_removed_cb(SpiceUsbDeviceManager *manager,
 
     gtk_container_foreach(GTK_CONTAINER(self),
                           destroy_widget_by_usb_device, device);
+
+    spice_usb_device_widget_update_status(self);
+}
+
+static void device_changed_cb(SpiceUsbDeviceManager *manager,
+    SpiceUsbDevice *device, gpointer user_data)
+{
+    SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
 
     spice_usb_device_widget_update_status(self);
 }

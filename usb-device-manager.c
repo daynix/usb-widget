@@ -1,7 +1,7 @@
 /* -*- Mode: C; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 
 #include <gtk/gtk.h>
-#include <usb-device-manager.h>
+#include "usb-device-manager.h"
 
 // this is the structure behind SpiceUsbDevice
 typedef struct _SpiceUsbDeviceInfo {
@@ -99,8 +99,7 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
                      g_cclosure_marshal_VOID__BOXED,
                      G_TYPE_NONE, /* return value */
                      1,
-                     G_TYPE_POINTER);
-                     //SPICE_TYPE_USB_DEVICE);
+                     SPICE_TYPE_USB_DEVICE);
 
     signals[DEVICE_REMOVED] =
         g_signal_new("device-removed",
@@ -111,8 +110,7 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
                      g_cclosure_marshal_VOID__BOXED,
                      G_TYPE_NONE,
                      1,
-                     G_TYPE_POINTER);
-                     //SPICE_TYPE_USB_DEVICE);
+                     SPICE_TYPE_USB_DEVICE);
 
     signals[DEVICE_CHANGED] =
         g_signal_new("device-changed",
@@ -123,8 +121,7 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
                      g_cclosure_marshal_VOID__BOXED,
                      G_TYPE_NONE, /* return value */
                      1,
-                     G_TYPE_POINTER);
-                     //SPICE_TYPE_USB_DEVICE);
+                     SPICE_TYPE_USB_DEVICE);
 
     signals[DEVICE_ERROR] =
         g_signal_new("device-error",
@@ -135,8 +132,7 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
                      g_cclosure_marshal_VOID__BOXED,
                      G_TYPE_NONE, /* return value */
                      2,
-                     //SPICE_TYPE_USB_DEVICE,
-                     G_TYPE_POINTER,
+                     SPICE_TYPE_USB_DEVICE,
                      G_TYPE_ERROR);
 
     g_type_class_add_private(klass, sizeof(SpiceUsbDeviceManagerPrivate));
@@ -326,6 +322,41 @@ gboolean spice_usb_device_manager_disconnect_device_sync(SpiceUsbDeviceManager *
     } else {
         return FALSE;
     }
+}
+
+void spice_usb_device_manager_connect_device_async(
+                                             SpiceUsbDeviceManager *self,
+                                             SpiceUsbDevice *device,
+                                             GCancellable *cancellable,
+                                             GAsyncReadyCallback callback,
+                                             gpointer user_data)
+{
+    spice_usb_device_manager_connect_device_sync(self, device);
+    callback(G_OBJECT(self), NULL, user_data);
+
+}
+
+void spice_usb_device_manager_disconnect_device_async(
+                                             SpiceUsbDeviceManager *self,
+                                             SpiceUsbDevice *device,
+                                             GCancellable *cancellable,
+                                             GAsyncReadyCallback callback,
+                                             gpointer user_data)
+{
+    spice_usb_device_manager_disconnect_device_sync(self, device);
+    callback(G_OBJECT(self), NULL, user_data);
+}
+
+gboolean spice_usb_device_manager_connect_device_finish(
+    SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
+{
+    return TRUE;
+}
+
+gboolean spice_usb_device_manager_disconnect_device_finish(
+    SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
+{
+    return TRUE;
 }
 
 gboolean
