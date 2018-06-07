@@ -900,25 +900,20 @@ static void add_cd_lun_button_clicked_cb(GtkWidget *add_button, gpointer data)
     gtk_widget_destroy(dialog);
 }
 
-static void ok_button_clicked_cb(GtkWidget *widget, gpointer data)
+static void ok_button_clicked_cb(GtkWidget *ok_button, gpointer data)
 {
-    GtkWidget *window = (GtkWidget *)data;
+    GtkWidget *parent_window = gtk_widget_get_toplevel(ok_button);
 
     g_print ("OK pressed\n");
-    gtk_widget_destroy(window);
+    gtk_widget_destroy(parent_window);
 }
 
-static void activate(GtkApplication *app, gpointer data)
+static GtkWidget *create_usb_widget_tree_view()
 {
-    GtkWidget *window; /* main window */
     GtkWidget *grid;
     GtkWidget *view;
     GtkWidget *sw;
     GtkWidget *add_button, *ok_button;
-
-//    window = gtk_window_new(GTK_WINDOW_TOPLEVEL);    
-    window = gtk_application_window_new(app);
-    //g_signal_connect(window, "delete_event", gtk_main_quit, NULL); /* dirty */
 
     grid = gtk_grid_new();
 
@@ -951,26 +946,32 @@ static void activate(GtkApplication *app, gpointer data)
 
     /* add LUN button */
     add_button = gtk_button_new_with_label("Add CD");
-    g_signal_connect(add_button, "clicked", G_CALLBACK(add_cd_lun_button_clicked_cb), window);
+    g_signal_connect(add_button, "clicked", G_CALLBACK(add_cd_lun_button_clicked_cb), grid);
     gtk_grid_attach(GTK_GRID(grid), add_button,
             1, 3,
             1, 1);
 
     /* add OK button */
     ok_button = gtk_button_new_with_label("OK");
-    g_signal_connect(ok_button, "clicked", G_CALLBACK(ok_button_clicked_cb), window);
+    g_signal_connect(ok_button, "clicked", G_CALLBACK(ok_button_clicked_cb), grid);
     gtk_grid_attach(GTK_GRID(grid), ok_button,
             3, 3,
             1, 1);
 
-    /* add the grid to the main window and show */
-    gtk_container_add(GTK_CONTAINER(window), grid);
+    return grid;
+}
+
+static void activate(GtkApplication *app, gpointer data)
+{
+    GtkWidget *window = gtk_application_window_new(app);
+    GtkWidget *tree_grid = create_usb_widget_tree_view(window);
+
+    gtk_container_add(GTK_CONTAINER(window), tree_grid);
+
     gtk_container_set_border_width(GTK_CONTAINER(window), 10);    
     gtk_window_set_default_size(GTK_WINDOW (window), 900, 400);
     gtk_window_set_title (GTK_WINDOW (window), "USB Widget prototype app");
     gtk_widget_show_all(window);
-
-    //gtk_main();
 }
 
 
