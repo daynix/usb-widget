@@ -3,6 +3,9 @@ TARGET = usb-widget
 LIBS = `pkg-config --libs gtk+-3.0`
 CC = gcc
 CFLAGS = `pkg-config --cflags gtk+-3.0` -I. -Wno-deprecated-declarations
+ifneq ($(DEBUG),)
+CFLAGS += -O0 -g -ggdb -rdynamic
+endif
 
 .PHONY: default all clean
 
