@@ -339,6 +339,7 @@ SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
 
 GPtrArray *spice_usb_device_manager_get_devices(SpiceUsbDeviceManager *manager)
 {
+    g_ptr_array_ref(_dev_ptr_array);
     return _dev_ptr_array;
 }
 
