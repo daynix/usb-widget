@@ -302,12 +302,16 @@ SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
 
         _dev_ptr_array = g_ptr_array_new();
         for (i = 0; i < G_N_ELEMENTS(_dev_array); i++) {
-            _dev_array[i].busnum = 10 * (i + 1);
-            _dev_array[i].devaddr = i + 1;
+            SpiceUsbDevice *dev_info;
+            /* allocate new usb device and copy the pre-set device */
+            dev_info = g_malloc(sizeof(*dev_info));
+            memcpy(dev_info, &_dev_array[i], sizeof(*dev_info));
+            dev_info->busnum = 10 * (i + 1);
+            dev_info->devaddr = i + 1;
             /* allocate empty lun array */
-            _dev_array[i].luns_array = g_ptr_array_new();
+            dev_info->luns_array = g_ptr_array_new();
             /* add usb device to the global list */
-            g_ptr_array_add(_dev_ptr_array, (gpointer)&_dev_array[i]);
+            g_ptr_array_add(_dev_ptr_array, (gpointer)dev_info);
         }
 
         /* add lun 1 */
@@ -610,7 +614,7 @@ gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
     dev_info = g_malloc(sizeof(*dev_info));
     /* generate some usb dev info */
     memcpy(dev_info, &_dev_array[0], sizeof(*dev_info));
-    dev_info->devaddr ++;
+    dev_info->devaddr = num_usb_devs + 1;
     dev_info->busnum = 10 * dev_info->devaddr;
 
     dev_info->luns_array = g_ptr_array_new();
