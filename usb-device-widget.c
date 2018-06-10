@@ -807,11 +807,11 @@ static void usb_cd_choose_file(GtkWidget *button, gpointer user_data)
     gtk_widget_destroy(dialog);
 }
 
-static void add_cd_lun_button_clicked_cb(GtkWidget *add_button, gpointer user_data)
+static void add_cd_lun_button_clicked_cb(GtkWidget *add_cd_button, gpointer user_data)
 {
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    GtkWidget *parent_window = gtk_widget_get_toplevel(add_button);
+    GtkWidget *parent_window = gtk_widget_get_toplevel(add_cd_button);
     GtkWidget *dialog, *content_area, *grid;
     GtkWidget *file_entry, *choose_button;
     GtkWidget *vendor_entry, *model_entry, *revision_entry, *alias_entry;
@@ -1030,7 +1030,7 @@ spice_usb_device_widget_show_info_bar(SpiceUsbDeviceWidget *self,
     gtk_info_bar_set_message_type(GTK_INFO_BAR(info_bar), message_type);
 
     content_area = gtk_info_bar_get_content_area(GTK_INFO_BAR(info_bar));
-    hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_container_add(GTK_CONTAINER(content_area), hbox);
 
     widget = gtk_image_new_from_icon_name(stock_icon_id,
@@ -1041,9 +1041,11 @@ spice_usb_device_widget_show_info_bar(SpiceUsbDeviceWidget *self,
     gtk_box_pack_start(GTK_BOX(hbox), widget, TRUE, TRUE, 0);
 
     priv->info_bar = gtk_alignment_new(0.0, 0.0, 1.0, 0.0);
-    gtk_alignment_set_padding(GTK_ALIGNMENT(priv->info_bar), 0, 0, 12, 0);
+    gtk_alignment_set_padding(GTK_ALIGNMENT(priv->info_bar), 0, 0, 0, 0);
     gtk_container_add(GTK_CONTAINER(priv->info_bar), info_bar);
+
     gtk_box_pack_start(GTK_BOX(self), priv->info_bar, FALSE, FALSE, 0);
+    gtk_box_reorder_child(GTK_BOX(self), priv->info_bar, 1); /* put after the lable */
     gtk_widget_show_all(priv->info_bar);
 }
 
@@ -1085,49 +1087,6 @@ static GtkTreeView *create_tree_view(GtkTreeStore *tree_store)
     return tree_view;
 }
 
-static GtkWidget *create_usb_widget_grid(SpiceUsbDeviceWidget *self)
-{
-    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    GtkTreeView *tree_view = priv->tree_view;
-    GtkWidget *grid;
-    GtkWidget *sw;
-    GtkWidget *add_button;
-
-    grid = gtk_grid_new();
-
-    /* top label */
-    gtk_grid_attach(GTK_GRID(grid),
-            gtk_label_new("Redirected USB devices"),
-            0, 0, // left top
-            5, 1); // width height
-
-    /* scrolled window */
-    sw = gtk_scrolled_window_new(NULL, NULL);
-    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-            GTK_SHADOW_ETCHED_IN);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
-            GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_hexpand(sw, TRUE);
-    gtk_widget_set_halign(sw, GTK_ALIGN_FILL);
-    gtk_widget_set_vexpand(sw, TRUE);
-    gtk_widget_set_valign(sw, GTK_ALIGN_FILL);
-    gtk_container_add(GTK_CONTAINER(sw), GTK_WIDGET(tree_view));
-
-    gtk_grid_attach(GTK_GRID(grid),
-            sw, /* scrolled view */
-            0, 1,
-            5, 1);
-
-    /* add LUN button */
-    add_button = gtk_button_new_with_label("Add CD");
-    g_signal_connect(add_button, "clicked", G_CALLBACK(add_cd_lun_button_clicked_cb), self);
-    gtk_grid_attach(GTK_GRID(grid), add_button,
-            1, 3,
-            1, 1);
-
-    return grid;
-}
-
 static void signals_connect(SpiceUsbDeviceWidget *self)
 {
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
@@ -1150,8 +1109,11 @@ static void signals_connect(SpiceUsbDeviceWidget *self)
 static void spice_usb_device_widget_constructed(GObject *gobject)
 {
     SpiceUsbDeviceWidget *self;
+    GtkRequisition min_size, natural_size;
     SpiceUsbDeviceWidgetPrivate *priv;
-    GtkWidget *grid;
+    GtkWidget *hbox, *dev_label;
+    GtkWidget *add_cd_button, *add_cd_icon;
+    GtkWidget *sw;
     GPtrArray *devices = NULL;
     GError *err = NULL;
     gchar *str;
@@ -1162,11 +1124,16 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
     if (!priv->session)
         g_error("SpiceUsbDeviceWidget constructed without a session");
 
+    min_size.width = 600;
+    min_size.height = 300;
+    natural_size.width = 1200;
+    natural_size.height = 600;
+    gtk_widget_get_preferred_size(GTK_WIDGET(self), &min_size, &natural_size);
+
     priv->label = gtk_label_new(NULL);
     str = g_strdup_printf("<b>%s</b>", _("Select USB devices to redirect"));
     gtk_label_set_markup(GTK_LABEL(priv->label), str);
     g_free(str);
-    gtk_misc_set_alignment(GTK_MISC(priv->label), 0.0, 0.5);
     gtk_box_pack_start(GTK_BOX(self), priv->label, FALSE, FALSE, 0);
 
     priv->manager = spice_usb_device_manager_get(priv->session, &err);
@@ -1180,11 +1147,37 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
 
     priv->tree_store = create_tree_store(priv->manager);
     priv->tree_view = create_tree_view(priv->tree_store);
-
     signals_connect(self);
 
-    grid = create_usb_widget_grid(self);
-    gtk_box_pack_end(GTK_BOX(self), grid, FALSE, FALSE, 0);
+    hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(self), hbox, FALSE, FALSE, 0);
+
+    /* "Available devices" label - in hbox */
+    dev_label = gtk_label_new("Available USB devices");
+    gtk_box_pack_start(GTK_BOX(hbox), dev_label, TRUE, FALSE, 0);
+
+    /* "Add CD" button - in hbox */
+    add_cd_button = gtk_button_new_with_label("Add CD");
+    gtk_button_set_always_show_image(GTK_BUTTON(add_cd_button), TRUE);
+    add_cd_icon = gtk_image_new_from_icon_name("list-add", GTK_ICON_SIZE_BUTTON);
+    gtk_button_set_image(GTK_BUTTON(add_cd_button), add_cd_icon);
+
+    gtk_widget_set_halign(add_cd_button, GTK_ALIGN_END);
+    g_signal_connect(add_cd_button, "clicked", G_CALLBACK(add_cd_lun_button_clicked_cb), self);
+    gtk_box_pack_start(GTK_BOX(hbox), add_cd_button, FALSE, FALSE, 0);
+
+    /* scrolled window */
+    sw = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
+            GTK_SHADOW_ETCHED_IN);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
+            GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_hexpand(sw, TRUE);
+    gtk_widget_set_halign(sw, GTK_ALIGN_FILL);
+    gtk_widget_set_vexpand(sw, TRUE);
+    gtk_widget_set_valign(sw, GTK_ALIGN_FILL);
+    gtk_container_add(GTK_CONTAINER(sw), GTK_WIDGET(priv->tree_view));
+    gtk_box_pack_start(GTK_BOX(self), sw, TRUE, TRUE, 0);
 
     devices = spice_usb_device_manager_get_devices(priv->manager);
     if (!devices)
