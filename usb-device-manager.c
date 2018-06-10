@@ -21,7 +21,11 @@ typedef struct _SpiceUsbDeviceInfo {
     (G_TYPE_INSTANCE_GET_PRIVATE ((obj), SPICE_TYPE_USB_DEVICE_MANAGER, SpiceUsbDeviceManagerPrivate))
 
 struct _SpiceUsbDeviceManagerPrivate {
+    SpiceSession *session;
     guint max_luns;
+    gboolean auto_connect;
+    gchar *auto_connect_filter;
+    gchar *redirect_on_connect;
 };
 
 static SpiceUsbDevice _dev_array[] = {
@@ -40,6 +44,16 @@ static SpiceUsbDevice _dev_array[] = {
         .redirecting = FALSE, .cd = FALSE, .connected = FALSE,
         .luns_array = NULL
     },
+};
+
+enum {
+    PROP_0,
+    PROP_SESSION,
+    PROP_AUTO_CONNECT,
+    PROP_AUTO_CONNECT_FILTER,
+    PROP_REDIRECT_ON_CONNECT,
+    PROP_FREE_CHANNELS,
+    PROP_SHARE_CD
 };
 
 enum
@@ -86,10 +100,144 @@ static void spice_usb_device_manager_initable_iface_init(GInitableIface *iface)
     iface->init = spice_usb_device_manager_initable_init;
 }
 
+static void spice_usb_device_manager_get_property(GObject     *gobject,
+                                                  guint        prop_id,
+                                                  GValue      *value,
+                                                  GParamSpec  *pspec)
+{
+    SpiceUsbDeviceManager *self = SPICE_USB_DEVICE_MANAGER(gobject);
+    SpiceUsbDeviceManagerPrivate *priv = self->priv;
+
+    switch (prop_id) {
+    case PROP_SESSION:
+        g_value_set_object(value, priv->session);
+        break;
+    case PROP_AUTO_CONNECT:
+        g_value_set_boolean(value, priv->auto_connect);
+        break;
+    case PROP_AUTO_CONNECT_FILTER:
+        g_value_set_string(value, priv->auto_connect_filter);
+        break;
+    case PROP_REDIRECT_ON_CONNECT:
+        g_value_set_string(value, priv->redirect_on_connect);
+        break;
+    case PROP_SHARE_CD:
+        /* get_property is not needed */
+        g_value_set_string(value, "");
+        break;
+    case PROP_FREE_CHANNELS: {
+        int free_channels = 3;
+#if 0
+        int i;
+        for (i = 0; i < priv->channels->len; i++) {
+            SpiceUsbredirChannel *channel = g_ptr_array_index(priv->channels, i);
+
+            if (!spice_usbredir_channel_get_device(channel))
+                free_channels++;
+        }
+#endif
+        g_value_set_int(value, free_channels);
+        break;
+    }
+    default:
+        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
+        break;
+    }
+}
+
+static void spice_usb_device_manager_set_property(GObject       *gobject,
+                                                  guint          prop_id,
+                                                  const GValue  *value,
+                                                  GParamSpec    *pspec)
+{
+    SpiceUsbDeviceManager *self = SPICE_USB_DEVICE_MANAGER(gobject);
+    SpiceUsbDeviceManagerPrivate *priv = self->priv;
+
+    switch (prop_id) {
+    case PROP_SESSION:
+        priv->session = g_value_get_object(value);
+        break;
+    case PROP_AUTO_CONNECT:
+        priv->auto_connect = g_value_get_boolean(value);
+        break;
+    case PROP_AUTO_CONNECT_FILTER: {
+        const gchar *filter = g_value_get_string(value);
+        g_free(priv->auto_connect_filter);
+        priv->auto_connect_filter = g_strdup(filter);
+        break;
+    }
+    case PROP_REDIRECT_ON_CONNECT: {
+        const gchar *filter = g_value_get_string(value);
+        g_free(priv->redirect_on_connect);
+        priv->redirect_on_connect = g_strdup(filter);
+        break;
+    }
+    case PROP_SHARE_CD:
+        break;
+    default:
+        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
+        break;
+    }
+}
+
 static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klass)
 {
-    GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+    GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
+    GParamSpec *pspec;
 
+    /* Add properties */
+    gobject_class->get_property = spice_usb_device_manager_get_property;
+    gobject_class->set_property = spice_usb_device_manager_set_property;
+
+    /* session */
+    g_object_class_install_property
+        (gobject_class, PROP_SESSION,
+         g_param_spec_object("session",
+                             "Session",
+                             "SpiceSession",
+                             SPICE_TYPE_SESSION,
+                             G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
+                             G_PARAM_STATIC_STRINGS));
+
+    /* auto-connect */
+    pspec = g_param_spec_boolean("auto-connect", "Auto Connect",
+                                 "Auto connect plugged in USB devices",
+                                 FALSE,
+                                 G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+    g_object_class_install_property(gobject_class, PROP_AUTO_CONNECT, pspec);
+
+    /* auto-connect-filter */
+    pspec = g_param_spec_string("auto-connect-filter", "Auto Connect Filter ",
+               "Filter determining which USB devices to auto connect",
+               "0x03,-1,-1,-1,0|-1,-1,-1,-1,1",
+               G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS);
+    g_object_class_install_property(gobject_class, PROP_AUTO_CONNECT_FILTER,
+                                    pspec);
+
+    /* redirect-on-connect */
+    pspec = g_param_spec_string("redirect-on-connect", "Redirect on connect",
+               "Filter selecting USB devices to redirect on connect", NULL,
+               G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+    g_object_class_install_property(gobject_class, PROP_REDIRECT_ON_CONNECT,
+                                    pspec);
+
+    /* cd-share */
+    pspec = g_param_spec_string("cd-share", "Share ISO file as CD",
+        "File nameto share", NULL,
+        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+    g_object_class_install_property(gobject_class, PROP_SHARE_CD, pspec);
+
+    /* free-channels */
+    pspec = g_param_spec_int("free-channels", "Free channels",
+               "The number of available channels for redirecting USB devices",
+               0,
+               G_MAXINT,
+               0,
+               G_PARAM_READABLE);
+    g_object_class_install_property(gobject_class, PROP_FREE_CHANNELS,
+                                    pspec);
+
+    /* Add signals */
     signals[DEVICE_ADDED] =
         g_signal_new("device-added",
                      G_OBJECT_CLASS_TYPE(gobject_class),
