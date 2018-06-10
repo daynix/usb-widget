@@ -28,24 +28,49 @@ static void spice_session_class_init(SpiceSessionClass *klass)
 {
 }
 
-
 static void activate(GtkApplication *app, gpointer data)
 {
-    GtkWidget *window = gtk_application_window_new(app);
+    GtkWidget *window, *win_label;
+    GtkWidget *dialog, *area, *usb_device_widget;
+    SpiceSession *session;
     GError *err;
-    SpiceSession *session = g_initable_new(SPICE_TYPE_SESSION,
+
+    window = gtk_application_window_new(app);
+
+    gtk_window_set_default_size(GTK_WINDOW(window), 1400, 800);
+    gtk_window_set_title(GTK_WINDOW(window), "USB Widget prototype app");
+    gtk_container_set_border_width(GTK_CONTAINER(window), 12);
+
+    win_label = gtk_label_new("USB Widget prototype app - this window will be closed with the dialog");
+    gtk_container_add(GTK_CONTAINER(window), win_label);
+    gtk_widget_set_valign(win_label, GTK_ALIGN_START);
+
+    dialog = gtk_dialog_new_with_buttons(_("Select USB devices for redirection"), GTK_WINDOW(window),
+                                         GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                         _("_Close"), GTK_RESPONSE_ACCEPT,
+                                         NULL);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 1200, 600);
+    gtk_container_set_border_width(GTK_CONTAINER(dialog), 12);
+    gtk_box_set_spacing(GTK_BOX(gtk_bin_get_child(GTK_BIN(dialog))), 12);
+
+    session = g_initable_new(SPICE_TYPE_SESSION,
                                           NULL, /* cancellable */
                                           &err, /* error */
                                           NULL);;
-    GtkWidget *usb_device_widget = spice_usb_device_widget_new(session, "%s %s");
 
-//    GtkWidget *tree_grid = create_usb_widget_tree_view();
-    gtk_container_add(GTK_CONTAINER(window), usb_device_widget);
+    usb_device_widget = spice_usb_device_widget_new(session, "%s %s");
 
-    gtk_container_set_border_width(GTK_CONTAINER(window), 10);    
-    gtk_window_set_default_size(GTK_WINDOW (window), 900, 400);
-    gtk_window_set_title (GTK_WINDOW (window), "USB Widget prototype app");
+    area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_box_pack_start(GTK_BOX(area), usb_device_widget, TRUE, TRUE, 0);
+
     gtk_widget_show_all(window);
+
+    gtk_widget_show_all(dialog);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+
+    gtk_widget_destroy(window);
 }
 
 
