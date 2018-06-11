@@ -377,17 +377,23 @@ void spice_usb_util_get_device_strings(int bus, int address,
                                        int vendor_id, int product_id,
                                        gchar **manufacturer, gchar **product)
 {
-    *manufacturer = "Spice-USB";
+    *manufacturer = "RedHat-Spice";
     *product = "Redir-USB";
 }
 
-void spice_usb_device_get_strings(const SpiceUsbDevice *device,
-                                  gchar **manufacturer, gchar **product)
+gboolean spice_usb_device_get_info(SpiceUsbDevice *device, spice_usb_device_info *info)
 {
-    spice_usb_util_get_device_strings(device->busnum, device->devaddr,
-                                      device->vid, device->pid,
-                                      manufacturer, product);
+    g_return_val_if_fail(device != NULL, FALSE);
 
+    info->bus = spice_usb_device_get_busnum(device);
+    info->address = spice_usb_device_get_devaddr(device);
+    info->vendor_id = spice_usb_device_get_vid(device);
+    info->product_id = spice_usb_device_get_pid(device);
+
+    spice_usb_util_get_device_strings(info->bus, info->address,
+        info->vendor_id, info->product_id, &info->vendor, &info->product);
+
+    return TRUE;
 }
 
 /**

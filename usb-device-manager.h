@@ -91,7 +91,19 @@ GType spice_session_get_type();
 
 /* Dev Manager API */
 
+typedef struct _spice_usb_device_info
+{
+    guint16 bus;
+    guint16 address;
+    guint16 vendor_id;
+    guint16 product_id;
+    // (OUT) allocated strings for vendor and product
+    gchar *vendor;
+    gchar *product;
+} spice_usb_device_info;
+
 gchar *spice_usb_device_get_description(SpiceUsbDevice *device, const gchar *format);
+gboolean spice_usb_device_get_info(SpiceUsbDevice *device, spice_usb_device_info *info);
 
 SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
                                                     GError **err);
@@ -129,13 +141,6 @@ gboolean spice_usb_device_manager_connect_device_finish(
 
 gboolean spice_usb_device_manager_disconnect_device_finish(
     SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err);
-
-guint8 spice_usb_device_get_busnum(const SpiceUsbDevice *device);
-guint8 spice_usb_device_get_devaddr(const SpiceUsbDevice *device);
-guint16 spice_usb_device_get_vid(const SpiceUsbDevice *device);
-guint16 spice_usb_device_get_pid(const SpiceUsbDevice *device);
-void spice_usb_device_get_strings(const SpiceUsbDevice *device,
-                                  gchar **manufacturer, gchar **product);
 
 /* redirect interface */
 gboolean

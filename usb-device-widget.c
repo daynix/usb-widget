@@ -214,7 +214,8 @@ static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
 {
     GtkTreeIter new_dev_iter;
     GdkPixbuf *icon_cd;
-    gchar *manufacturer, *product, *addr_str;
+    spice_usb_device_info dev_info;
+    gchar *addr_str;
     GArray *lun_array;
     guint j;
 
@@ -236,20 +237,16 @@ static void usb_widget_treestore_add_device(GtkTreeStore *treestore,
 
     icon_cd = get_named_icon("media-optical", 24);
 
-    spice_usb_device_get_strings(usb_device, &manufacturer, &product);
-    //(gint)spice_usb_device_get_vid(usb_device),
-    //(gint)spice_usb_device_get_pid(usb_device));
-    addr_str = g_strdup_printf("%d:%d",
-                                (gint)spice_usb_device_get_busnum(usb_device),
-                                (gint)spice_usb_device_get_devaddr(usb_device));
-    g_print("usb device a:[%s] p:[%s] m:[%s]\n", addr_str, manufacturer, product);
+    spice_usb_device_get_info(usb_device, &dev_info);
+    addr_str = g_strdup_printf("%d:%d", (gint)dev_info.bus, (gint)dev_info.address);
+    g_print("usb device a:[%s] p:[%s] m:[%s]\n", addr_str, dev_info.vendor, dev_info.product);
 
     gtk_tree_store_set(treestore, &new_dev_iter,
         COL_CONNECT, spice_usb_device_manager_is_device_connected(usb_dev_mgr, usb_device),
         COL_ADDRESS, addr_str,
         COL_CD_ICON, icon_cd,
-        COL_VENDOR, manufacturer,
-        COL_PRODUCT, product,
+        COL_VENDOR, dev_info.vendor,
+        COL_PRODUCT, dev_info.product,
         COL_CD_DEV, spice_usb_device_manager_is_device_cd(usb_dev_mgr, usb_device),
         COL_LUN_ITEM, FALSE, /* USB device item */
         COL_DEV_ITEM, TRUE, /* USB device item */
