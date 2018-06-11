@@ -167,16 +167,16 @@ typedef struct _tree_find_usb_dev {
 
 typedef void (*tree_item_toggled_cb)(GtkCellRendererToggle *, gchar *, gpointer);
 
-static GtkTreePath *usb_widget_treestore_add_device(GtkTreeStore *treestore,
+static GtkTreePath *usb_widget_tree_store_add_device(GtkTreeStore *tree_store,
                                                     GtkTreeIter *old_dev_iter,
                                                     SpiceUsbDeviceManager *usb_dev_mgr,
                                                     SpiceUsbDevice *usb_device);
 
-static GtkTreeStore* create_tree_store(SpiceUsbDeviceManager *usb_dev_mgr)
+static GtkTreeStore* usb_widget_create_tree_store(SpiceUsbDeviceManager *usb_dev_mgr)
 {
-    GtkTreeStore *treestore;
+    GtkTreeStore *tree_store;
 
-    treestore = gtk_tree_store_new(NUM_COLS,
+    tree_store = gtk_tree_store_new(NUM_COLS,
                         G_TYPE_BOOLEAN, /* COL_CONNECT */
                         G_TYPE_STRING, /* COL_ADDRESS */
                         GDK_TYPE_PIXBUF, /* COL_CD_ICON */
@@ -196,7 +196,7 @@ static GtkTreeStore* create_tree_store(SpiceUsbDeviceManager *usb_dev_mgr)
                         G_TYPE_BOOLEAN /* COL_ROW_COLOR_SET */ );
     g_print("tree store created\n");
 
-    return treestore;
+    return tree_store;
 }
 
 static GdkPixbuf *get_named_icon(const gchar *name, gint size)
@@ -207,7 +207,7 @@ static GdkPixbuf *get_named_icon(const gchar *name, gint size)
     return pixbuf;
 }
 
-static GtkTreePath *usb_widget_treestore_add_device(GtkTreeStore *treestore,
+static GtkTreePath *usb_widget_tree_store_add_device(GtkTreeStore *tree_store,
                                                     GtkTreeIter *old_dev_iter,
                                                     SpiceUsbDeviceManager *usb_dev_mgr,
                                                     SpiceUsbDevice *usb_device)
@@ -229,10 +229,10 @@ static GtkTreePath *usb_widget_treestore_add_device(GtkTreeStore *treestore,
 #endif
 
     if (old_dev_iter == NULL) {
-        gtk_tree_store_append(treestore, &new_dev_iter, NULL);
+        gtk_tree_store_append(tree_store, &new_dev_iter, NULL);
     } else {
-        gtk_tree_store_insert_after(treestore, &new_dev_iter, NULL, old_dev_iter);
-        gtk_tree_store_remove(treestore, old_dev_iter);
+        gtk_tree_store_insert_after(tree_store, &new_dev_iter, NULL, old_dev_iter);
+        gtk_tree_store_remove(tree_store, old_dev_iter);
     }
 
     icon_cd = get_named_icon("media-optical", 24);
@@ -241,7 +241,7 @@ static GtkTreePath *usb_widget_treestore_add_device(GtkTreeStore *treestore,
     addr_str = g_strdup_printf("%d:%d", (gint)dev_info.bus, (gint)dev_info.address);
     g_print("usb device a:[%s] p:[%s] m:[%s]\n", addr_str, dev_info.vendor, dev_info.product);
 
-    gtk_tree_store_set(treestore, &new_dev_iter,
+    gtk_tree_store_set(tree_store, &new_dev_iter,
         COL_CONNECT, spice_usb_device_manager_is_device_connected(usb_dev_mgr, usb_device),
         COL_ADDRESS, addr_str,
         COL_CD_ICON, icon_cd,
@@ -273,8 +273,8 @@ static GtkTreePath *usb_widget_treestore_add_device(GtkTreeStore *treestore,
         g_snprintf(lun_str, 8, "↳%d", lun_item->lun);
 
         /* Append LUN as a child of USB device */
-        gtk_tree_store_append(treestore, &lun_iter, &new_dev_iter);
-        gtk_tree_store_set(treestore, &lun_iter,
+        gtk_tree_store_append(tree_store, &lun_iter, &new_dev_iter);
+        gtk_tree_store_set(tree_store, &lun_iter,
                 COL_ADDRESS, lun_str,
                 COL_VENDOR, lun_item->info.vendor,
                 COL_PRODUCT, lun_item->info.product,
@@ -293,11 +293,12 @@ static GtkTreePath *usb_widget_treestore_add_device(GtkTreeStore *treestore,
                 -1);
     }
 
-    return gtk_tree_model_get_path(GTK_TREE_MODEL(treestore), &new_dev_iter);
+    return gtk_tree_model_get_path(GTK_TREE_MODEL(tree_store), &new_dev_iter);
 }
 
-static gboolean tree_find_usb_dev_foreach_cb(GtkTreeModel *tree_model,
-    GtkTreePath *path, GtkTreeIter *iter, gpointer user_data)
+static gboolean usb_widget_tree_store_find_usb_dev_foreach_cb(GtkTreeModel *tree_model,
+                                                              GtkTreePath *path, GtkTreeIter *iter,
+                                                              gpointer user_data)
 {
     tree_find_usb_dev *find_info = (tree_find_usb_dev *)user_data;
     SpiceUsbDevice *find_usb_device = find_info->usb_dev;
@@ -317,27 +318,14 @@ static gboolean tree_find_usb_dev_foreach_cb(GtkTreeModel *tree_model,
     }
 }
 
-static GtkTreeIter *tree_find_usb_device(GtkTreeStore *tree_store,
-                                         SpiceUsbDevice *usb_device)
+static GtkTreeIter *usb_widget_tree_store_find_usb_device(GtkTreeStore *tree_store,
+                                                          SpiceUsbDevice *usb_device)
 {
     tree_find_usb_dev find_info = { .usb_dev = usb_device, .dev_iter = NULL };
-    gtk_tree_model_foreach(GTK_TREE_MODEL(tree_store), tree_find_usb_dev_foreach_cb, (gpointer)&find_info);
+    gtk_tree_model_foreach(GTK_TREE_MODEL(tree_store),
+                           usb_widget_tree_store_find_usb_dev_foreach_cb, (gpointer)&find_info);
     return find_info.dev_iter;
 }
-
-#if 0
-static void tree_delete_device(GtkTreeStore *tree_store, GtkTreeIter *old_dev_iter)
-{
-    GtkTreeIter child_iter;
-    gboolean iter_set;
-
-    iter_set = gtk_tree_model_iter_children(GTK_TREE_MODEL(tree_store), &child_iter, old_dev_iter);
-    while (iter_set) {
-        iter_set = gtk_tree_store_remove(tree_store, &child_iter);
-    }
-    gtk_tree_store_remove(tree_store, old_dev_iter);
-}
-#endif
 
 static GtkTreeViewColumn* view_add_toggle_column(GtkTreeView *tree_view, GtkTreeStore *tree_store,
                                                  enum column_id col_id,
@@ -532,7 +520,7 @@ static void device_added_cb(SpiceUsbDeviceManager *usb_dev_mgr,
 
     g_print("Signal: Device Added\n");
 
-    new_dev_path = usb_widget_treestore_add_device(priv->tree_store, NULL, priv->manager, usb_device);
+    new_dev_path = usb_widget_tree_store_add_device(priv->tree_store, NULL, priv->manager, usb_device);
 
     gtk_tree_view_expand_row(priv->tree_view, new_dev_path, FALSE);
     gtk_tree_path_free(new_dev_path);
@@ -549,7 +537,7 @@ static void device_removed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
 
     g_print("Signal: Device Removed\n");
 
-    old_dev_iter = tree_find_usb_device(priv->tree_store, usb_device);
+    old_dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_device);
     if (old_dev_iter != NULL) {
         g_print("Remove device iter %p\n", old_dev_iter);
         gtk_tree_store_remove(priv->tree_store, old_dev_iter);
@@ -569,11 +557,11 @@ static void device_changed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
 
     g_print("Signal: Device Changed\n");
 
-    old_dev_iter = tree_find_usb_device(priv->tree_store, usb_device);
+    old_dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_device);
     if (old_dev_iter != NULL) {
         GtkTreePath *new_dev_path;
 
-        new_dev_path = usb_widget_treestore_add_device(priv->tree_store, old_dev_iter, priv->manager, usb_device);
+        new_dev_path = usb_widget_tree_store_add_device(priv->tree_store, old_dev_iter, priv->manager, usb_device);
 
         gtk_tree_view_expand_row(priv->tree_view, new_dev_path, FALSE);
         gtk_tree_path_free(new_dev_path);
@@ -593,7 +581,7 @@ static void device_error_cb(SpiceUsbDeviceManager *manager,
 
     g_print("Signal: Device Error\n");
 
-    dev_iter = tree_find_usb_device(priv->tree_store, usb_device);
+    dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_device);
     if (dev_iter != NULL) {
         tree_item_toggle_set(priv->tree_store, dev_iter, COL_CONNECT, FALSE);
         spice_usb_device_widget_update_status(self);
@@ -1056,7 +1044,7 @@ spice_usb_device_widget_show_info_bar(SpiceUsbDeviceWidget *self,
     gtk_widget_show_all(priv->info_bar);
 }
 
-static GtkTreeView *create_tree_view(GtkTreeStore *tree_store)
+static GtkTreeView *usb_widget_create_tree_view(GtkTreeStore *tree_store)
 {
     GtkTreeView *tree_view = GTK_TREE_VIEW(gtk_tree_view_new());
 
@@ -1152,8 +1140,8 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
         return;
     }
 
-    priv->tree_store = create_tree_store(priv->manager);
-    priv->tree_view = create_tree_view(priv->tree_store);
+    priv->tree_store = usb_widget_create_tree_store(priv->manager);
+    priv->tree_view = usb_widget_create_tree_view(priv->tree_store);
     signals_connect(self);
 
     hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -1192,7 +1180,7 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
 
     for (i = 0; i < devices->len; i++) {
         SpiceUsbDevice *usb_device = g_ptr_array_index(devices, i);
-        usb_widget_treestore_add_device(GTK_TREE_STORE(priv->tree_store), NULL, priv->manager, usb_device);
+        usb_widget_tree_store_add_device(GTK_TREE_STORE(priv->tree_store), NULL, priv->manager, usb_device);
     }
     g_ptr_array_unref(devices);
 
