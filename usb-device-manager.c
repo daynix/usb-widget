@@ -31,12 +31,12 @@ struct _SpiceUsbDeviceManagerPrivate {
 static SpiceUsbDevice _dev_array[] = {
     {
         .vid = 1200, .pid = 12,
-        .redirecting = TRUE, .cd = TRUE, .connected = FALSE,
+        .redirecting = TRUE, .cd = TRUE, .connected = TRUE,
         .luns_array = NULL 
     },
     {
         .vid = 1700, .pid = 17,
-        .redirecting = TRUE, .cd = FALSE, .connected = FALSE,
+        .redirecting = TRUE, .cd = FALSE, .connected = TRUE,
         .luns_array = NULL
     },
     {
