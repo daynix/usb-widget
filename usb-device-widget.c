@@ -647,6 +647,217 @@ static GtkTreeSelection* set_selection_handler(GtkTreeView *tree_view)
     return select;
 }
 
+/* LUN properties dialog */
+
+typedef struct _lun_properties_dialog {
+    GtkWidget *dialog;
+
+    GtkWidget *file_entry;
+    GtkWidget *vendor_entry;
+    GtkWidget *product_entry;
+    GtkWidget *revision_entry;
+    GtkWidget *alias_entry;
+
+    GtkWidget *started_toggle;
+    GtkWidget *loaded_toggle;
+    GtkWidget *locked_toggle;
+} lun_properties_dialog;
+
+static void usb_cd_choose_file(GtkWidget *button, gpointer user_data)
+{
+    GtkWidget *file_entry = (GtkWidget *)user_data;
+    GtkWidget *dialog;
+    gint res;
+
+    dialog = gtk_file_chooser_dialog_new ("Choose File for USB CD",
+                                          GTK_WINDOW(gtk_widget_get_toplevel(file_entry)),
+                                          GTK_FILE_CHOOSER_ACTION_OPEN,
+                                          "_Cancel",
+                                          GTK_RESPONSE_CANCEL,
+                                          "_Ok",
+                                          GTK_RESPONSE_ACCEPT,
+                                          NULL);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+
+    res = gtk_dialog_run(GTK_DIALOG(dialog));
+    if (res == GTK_RESPONSE_ACCEPT) {
+        char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        gtk_entry_set_alignment(GTK_ENTRY(file_entry), 1);
+        gtk_entry_set_text(GTK_ENTRY(file_entry), filename);
+        g_free(filename);
+    }
+    gtk_widget_destroy(dialog);
+}
+
+static void create_lun_properties_dialog(SpiceUsbDeviceWidget *self,
+                                               GtkWidget *parent_window,
+                                               spice_usb_device_lun_info *lun_info,
+                                               lun_properties_dialog *lun_dialog)
+{
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
+    GtkWidget *dialog, *content_area, *grid;
+    GtkWidget *file_entry, *choose_button;
+    GtkWidget *vendor_entry, *product_entry, *revision_entry, *alias_entry;
+    GtkWidget *started_toggle, *loaded_toggle, *locked_toggle;
+    gint nrow = 0;
+
+    dialog = gtk_dialog_new_with_buttons (!lun_info ? "Add CD LUN" : "CD LUN Settings",
+                    GTK_WINDOW(parent_window),
+                    GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT, /* flags */
+                    !lun_info ? "Add" : "OK", GTK_RESPONSE_ACCEPT,
+                    "Cancel", GTK_RESPONSE_REJECT,
+                    NULL);
+
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    gtk_container_set_border_width(GTK_CONTAINER(dialog), 12);
+    gtk_box_set_spacing(GTK_BOX(gtk_bin_get_child(GTK_BIN(dialog))), 12);
+
+    content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+
+    grid = gtk_grid_new();
+    gtk_container_add(GTK_CONTAINER(content_area), grid);
+
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 12);
+    gtk_grid_set_column_homogeneous(GTK_GRID(grid), FALSE);
+
+    /* File path label */
+    gtk_grid_attach(GTK_GRID(grid),
+            gtk_label_new("Select file or device"),
+            0, nrow++, // left top
+            7, 1); // width height
+
+    /* file/device path entry */
+    file_entry = gtk_entry_new();
+    if (!lun_info) {
+        gtk_entry_set_placeholder_text(GTK_ENTRY(file_entry), "file-path");
+    } else {
+        gtk_entry_set_text(GTK_ENTRY(file_entry), lun_info->file_path);
+    }
+    gtk_grid_attach(GTK_GRID(grid),
+            file_entry,
+            0, nrow, // left top
+            6, 1); // width height
+
+    /* choose button */
+    choose_button = gtk_button_new_with_mnemonic("_Choose File");
+    g_signal_connect(GTK_BUTTON(choose_button),
+                     "clicked", G_CALLBACK(usb_cd_choose_file), file_entry);
+    gtk_grid_attach(GTK_GRID(grid),
+            choose_button,
+            6, nrow++, // left top
+            1, 1); // width height
+
+    /* product id labels */
+    gtk_grid_attach(GTK_GRID(grid),
+            gtk_label_new("Vendor"),
+            0, nrow, // left top
+            2, 1); // width height
+
+    gtk_grid_attach(GTK_GRID(grid),
+            gtk_label_new("Product"),
+            2, nrow, // left top
+            4, 1); // width height
+
+    gtk_grid_attach(GTK_GRID(grid),
+            gtk_label_new("Revision"),
+            6, nrow++, // left top
+            1, 1); // width height
+
+    /* vendor entry */
+    vendor_entry = gtk_entry_new();
+    gtk_entry_set_max_length(GTK_ENTRY(vendor_entry), 8);
+    gtk_entry_set_text(GTK_ENTRY(vendor_entry), !lun_info ? "RedHat" : lun_info->vendor);
+    gtk_grid_attach(GTK_GRID(grid),
+            vendor_entry,
+            0, nrow, // left top
+            2, 1); // width height
+
+    /* tree_store entry */
+    product_entry = gtk_entry_new();
+    gtk_entry_set_max_length(GTK_ENTRY(product_entry), 16);
+    gtk_entry_set_text(GTK_ENTRY(product_entry), !lun_info ? "USB-CD" : lun_info->product);
+    gtk_grid_attach(GTK_GRID(grid),
+            product_entry,
+            2, nrow, // left top
+            4, 1); // width height
+
+    /* revision entry */
+    revision_entry = gtk_entry_new();
+    gtk_entry_set_max_length(GTK_ENTRY(revision_entry), 4);
+    gtk_entry_set_text(GTK_ENTRY(revision_entry), !lun_info ? "0.1" : lun_info->revision);
+    gtk_grid_attach(GTK_GRID(grid),
+            revision_entry,
+            6, nrow++, // left top
+            1, 1); // width height
+
+    /* alias label */
+    gtk_grid_attach(GTK_GRID(grid),
+            gtk_label_new("Revision"),
+            0, nrow++, // left top
+            7, 1); // width height
+
+    /* alias entry */
+    alias_entry = gtk_entry_new();
+    if (!lun_info) {
+        gtk_entry_set_placeholder_text(GTK_ENTRY(alias_entry), "device alias");
+    } else {
+        gtk_entry_set_text(GTK_ENTRY(alias_entry), lun_info->alias);
+    }
+    gtk_grid_attach(GTK_GRID(grid),
+            alias_entry,
+            0, nrow++, // left top
+            7, 1); // width height
+
+    /* Started checkbox */
+    started_toggle = gtk_check_button_new_with_label("Started");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(started_toggle), !lun_info ? TRUE : lun_info->started);
+    gtk_grid_attach(GTK_GRID(grid),
+            started_toggle,
+            1, nrow, // left top
+            1, 1); // width height
+
+    /* Loaded checkbox */
+    loaded_toggle = gtk_check_button_new_with_label("Loaded");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(loaded_toggle), !lun_info ? TRUE : lun_info->loaded);
+    gtk_grid_attach(GTK_GRID(grid),
+            loaded_toggle,
+            3, nrow, // left top
+            1, 1); // width height
+
+    /* Locked checkbox */
+    locked_toggle = gtk_check_button_new_with_label("Locked");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(locked_toggle), !lun_info ? FALSE : lun_info->locked);
+    gtk_grid_attach(GTK_GRID(grid),
+            locked_toggle,
+            6, nrow++, // left top
+            1, 1); // width height
+
+    gtk_widget_show_all(dialog);
+
+    lun_dialog->dialog = dialog;
+    lun_dialog->file_entry = file_entry;
+    lun_dialog->vendor_entry = vendor_entry;
+    lun_dialog->product_entry = product_entry;
+    lun_dialog->revision_entry = revision_entry;
+    lun_dialog->alias_entry = alias_entry;
+    lun_dialog->started_toggle = started_toggle;
+    lun_dialog->loaded_toggle = loaded_toggle;
+    lun_dialog->locked_toggle = locked_toggle;
+}
+
+static void lun_properties_dialog_get_info(lun_properties_dialog *lun_dialog,
+                                           spice_usb_device_lun_info *lun_info)
+{
+    lun_info->file_path = gtk_entry_get_text(GTK_ENTRY(lun_dialog->file_entry));
+    lun_info->vendor = gtk_entry_get_text(GTK_ENTRY(lun_dialog->vendor_entry));
+    lun_info->product = gtk_entry_get_text(GTK_ENTRY(lun_dialog->product_entry));
+    lun_info->revision = gtk_entry_get_text(GTK_ENTRY(lun_dialog->revision_entry));
+    lun_info->alias = gtk_entry_get_text(GTK_ENTRY(lun_dialog->alias_entry));
+    lun_info->started = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lun_dialog->started_toggle));
+    lun_info->loaded = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lun_dialog->loaded_toggle));
+    lun_info->locked = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lun_dialog->locked_toggle));
+}
+
 /* Popup menu */
 static void view_popup_menu_on_eject(GtkWidget *menuitem, gpointer user_data)
 {
@@ -667,8 +878,8 @@ static void view_popup_menu_on_remove(GtkWidget *menuitem, gpointer user_data)
 
     if (gtk_tree_selection_get_selected(select, &tree_model, &iter)) {
         gtk_tree_model_get(tree_model, &iter,
-                       COL_LUN_ITEM, &is_lun,
-                       -1);
+                           COL_LUN_ITEM, &is_lun,
+                           -1);
         if (!is_lun) {
             SpiceUsbDevice *usb_device;
             gtk_tree_model_get(tree_model, &iter, COL_ITEM_DATA, (gpointer *)&usb_device, -1);
@@ -689,7 +900,40 @@ static void view_popup_menu_on_settings(GtkWidget *menuitem, gpointer user_data)
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     GtkTreeView *tree_view = priv->tree_view;
-    g_print ("Do Settings!\n");
+    GtkTreeSelection *select = gtk_tree_view_get_selection(priv->tree_view);
+    GtkTreeModel *tree_model;
+    GtkTreeIter iter;
+    gboolean is_lun;
+
+    if (gtk_tree_selection_get_selected(select, &tree_model, &iter)) {
+        gtk_tree_model_get(tree_model, &iter,
+                           COL_LUN_ITEM, &is_lun,
+                           -1);
+        if (!is_lun) {
+            g_print("No settings for USB device yet\n");
+        } else {
+            lun_properties_dialog lun_dialog;
+            usb_widget_lun_item *lun_item;
+            gint resp;
+
+            gtk_tree_model_get(tree_model, &iter, COL_ITEM_DATA, (gpointer *)&lun_item, -1);
+            gtk_tree_selection_unselect_all(select);
+            create_lun_properties_dialog(self, NULL, &lun_item->info, &lun_dialog);
+
+            resp = gtk_dialog_run(GTK_DIALOG(lun_dialog.dialog));
+            if (resp == GTK_RESPONSE_ACCEPT) {
+                spice_usb_device_lun_info lun_info;
+                g_print("response is ACCEPT\n");
+                lun_properties_dialog_get_info(&lun_dialog, &lun_info);
+                spice_usb_device_manager_add_cd_lun(priv->manager, &lun_info);
+            } else {
+                g_print("response is REJECT\n");
+            }
+            gtk_widget_destroy(lun_dialog.dialog);
+        }
+    } else {
+        g_print("Remove - failed to get selection\n");
+    }
 }
 
 static GtkWidget *view_popup_add_menu_item(GtkWidget *menu,
@@ -775,186 +1019,26 @@ static gboolean treeview_on_popup_key_pressed_cb(GtkWidget *view, gpointer user_
 
 /* Add LUN dialog */
 
-static void usb_cd_choose_file(GtkWidget *button, gpointer user_data)
-{
-    GtkWidget *file_entry = (GtkWidget *)user_data;
-    GtkWidget *dialog;
-    gint res;
-
-    dialog = gtk_file_chooser_dialog_new ("Choose File for USB CD",
-                                          GTK_WINDOW(gtk_widget_get_toplevel(file_entry)),
-                                          GTK_FILE_CHOOSER_ACTION_OPEN,
-                                          "_Cancel",
-                                          GTK_RESPONSE_CANCEL,
-                                          "_Ok",
-                                          GTK_RESPONSE_ACCEPT,
-                                          NULL);
-    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
-
-    res = gtk_dialog_run(GTK_DIALOG(dialog));
-    if (res == GTK_RESPONSE_ACCEPT) {
-        char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-        gtk_entry_set_alignment(GTK_ENTRY(file_entry), 1);
-        gtk_entry_set_text(GTK_ENTRY(file_entry), filename);
-        g_free(filename);
-    }
-    gtk_widget_destroy(dialog);
-}
-
 static void add_cd_lun_button_clicked_cb(GtkWidget *add_cd_button, gpointer user_data)
 {
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     GtkWidget *parent_window = gtk_widget_get_toplevel(add_cd_button);
-    GtkWidget *dialog, *content_area, *grid;
-    GtkWidget *file_entry, *choose_button;
-    GtkWidget *vendor_entry, *model_entry, *revision_entry, *alias_entry;
-    GtkWidget *started_toggle, *loaded_toggle, *locked_toggle;
-    gint nrow = 0, resp;
+    lun_properties_dialog lun_dialog;
+    gint resp;
 
-    dialog = gtk_dialog_new_with_buttons ("Add CD LUN",
-                    GTK_WINDOW(parent_window),
-                    GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT, /* flags */
-                    "Add",
-                    GTK_RESPONSE_ACCEPT,
-                    "Cancel",
-                    GTK_RESPONSE_REJECT,
-                    NULL);
+    create_lun_properties_dialog(self, parent_window, NULL, &lun_dialog);
 
-    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
-    gtk_container_set_border_width(GTK_CONTAINER(dialog), 12);
-    gtk_box_set_spacing(GTK_BOX(gtk_bin_get_child(GTK_BIN(dialog))), 12);
-
-    content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-
-    grid = gtk_grid_new();
-    gtk_container_add(GTK_CONTAINER(content_area), grid);
-
-    gtk_grid_set_row_spacing(GTK_GRID(grid), 12);
-    gtk_grid_set_column_homogeneous(GTK_GRID(grid), FALSE);
-
-    /* File path label */
-    gtk_grid_attach(GTK_GRID(grid),
-            gtk_label_new("Select file or device"),
-            0, nrow++, // left top
-            7, 1); // width height
-
-    /* file/device path entry */
-    file_entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(file_entry), "file-path");
-    gtk_grid_attach(GTK_GRID(grid),
-            file_entry,
-            0, nrow, // left top
-            6, 1); // width height
-
-    /* choose button */
-    choose_button = gtk_button_new_with_mnemonic("_Choose File");
-    g_signal_connect(GTK_BUTTON(choose_button),
-                     "clicked", G_CALLBACK(usb_cd_choose_file), file_entry);
-    gtk_grid_attach(GTK_GRID(grid),
-            choose_button,
-            6, nrow++, // left top
-            1, 1); // width height
-
-    /* product id labels */
-    gtk_grid_attach(GTK_GRID(grid),
-            gtk_label_new("Vendor"),
-            0, nrow, // left top
-            2, 1); // width height
-
-    gtk_grid_attach(GTK_GRID(grid),
-            gtk_label_new("Product"),
-            2, nrow, // left top
-            4, 1); // width height
-
-    gtk_grid_attach(GTK_GRID(grid),
-            gtk_label_new("Revision"),
-            6, nrow++, // left top
-            1, 1); // width height
-
-    /* vendor entry */
-    vendor_entry = gtk_entry_new();
-    gtk_entry_set_max_length(GTK_ENTRY(vendor_entry), 8);
-    gtk_entry_set_text(GTK_ENTRY(vendor_entry), "RedHat");
-    gtk_grid_attach(GTK_GRID(grid),
-            vendor_entry,
-            0, nrow, // left top
-            2, 1); // width height
-
-    /* tree_store entry */
-    model_entry = gtk_entry_new();
-    gtk_entry_set_max_length(GTK_ENTRY(model_entry), 16);
-    gtk_entry_set_text(GTK_ENTRY(model_entry), "USB-CD");
-    gtk_grid_attach(GTK_GRID(grid),
-            model_entry,
-            2, nrow, // left top
-            4, 1); // width height
-
-    /* revision entry */
-    revision_entry = gtk_entry_new();
-    gtk_entry_set_max_length(GTK_ENTRY(revision_entry), 4);
-    gtk_entry_set_text(GTK_ENTRY(revision_entry), "0.1");
-    gtk_grid_attach(GTK_GRID(grid),
-            revision_entry,
-            6, nrow++, // left top
-            1, 1); // width height
-
-    /* alias label */
-    gtk_grid_attach(GTK_GRID(grid),
-            gtk_label_new("Revision"),
-            0, nrow++, // left top
-            7, 1); // width height
-
-    /* alias entry */
-    alias_entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(alias_entry), "device alias");
-    gtk_grid_attach(GTK_GRID(grid),
-            alias_entry,
-            0, nrow++, // left top
-            7, 1); // width height
-
-    /* Started checkbox */
-    started_toggle = gtk_check_button_new_with_label("Started");
-    gtk_grid_attach(GTK_GRID(grid),
-            started_toggle,
-            1, nrow, // left top
-            1, 1); // width height
-
-    /* Loaded checkbox */
-    loaded_toggle = gtk_check_button_new_with_label("Loaded");
-    gtk_grid_attach(GTK_GRID(grid),
-            loaded_toggle,
-            3, nrow, // left top
-            1, 1); // width height
-
-    /* Locked checkbox */
-    locked_toggle = gtk_check_button_new_with_label("Locked");
-    gtk_grid_attach(GTK_GRID(grid),
-            locked_toggle,
-            6, nrow++, // left top
-            1, 1); // width height
-
-    gtk_widget_show_all(dialog);
-
-    resp = gtk_dialog_run(GTK_DIALOG(dialog));
+    resp = gtk_dialog_run(GTK_DIALOG(lun_dialog.dialog));
     if (resp == GTK_RESPONSE_ACCEPT) {
         spice_usb_device_lun_info lun_info;
-
         g_print("response is ACCEPT\n");
-        lun_info.file_path = gtk_entry_get_text(GTK_ENTRY(file_entry));
-        lun_info.vendor = gtk_entry_get_text(GTK_ENTRY(vendor_entry));
-        lun_info.product = gtk_entry_get_text(GTK_ENTRY(model_entry));
-        lun_info.revision = gtk_entry_get_text(GTK_ENTRY(revision_entry));
-        lun_info.alias = gtk_entry_get_text(GTK_ENTRY(alias_entry));
-        lun_info.started = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(started_toggle));
-        lun_info.loaded = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(loaded_toggle));
-        lun_info.locked = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(locked_toggle));
-
+        lun_properties_dialog_get_info(&lun_dialog, &lun_info);
         spice_usb_device_manager_add_cd_lun(priv->manager, &lun_info);
     } else {
         g_print("response is REJECT\n");
     }
-    gtk_widget_destroy(dialog);
+    gtk_widget_destroy(lun_dialog.dialog);
 }
 
 static void spice_usb_device_widget_get_property(GObject     *gobject,
