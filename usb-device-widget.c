@@ -732,6 +732,10 @@ static void create_lun_properties_dialog(SpiceUsbDeviceWidget *self,
         gtk_entry_set_placeholder_text(GTK_ENTRY(file_entry), "file-path");
     } else {
         gtk_entry_set_text(GTK_ENTRY(file_entry), lun_info->file_path);
+        if (lun_info->loaded) {
+            gtk_editable_set_editable(GTK_EDITABLE(file_entry), FALSE);
+            gtk_widget_set_can_focus(file_entry, FALSE);
+        }
     }
     gtk_grid_attach(GTK_GRID(grid),
             file_entry,
