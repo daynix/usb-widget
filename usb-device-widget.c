@@ -178,7 +178,7 @@ static GtkTreePath *usb_widget_add_device(SpiceUsbDeviceWidget *self,
                                           SpiceUsbDevice *usb_device,
                                           GtkTreeIter *old_dev_iter);
 
-static GtkTreeStore* usb_widget_create_tree_store(SpiceUsbDeviceManager *usb_dev_mgr)
+static GtkTreeStore* usb_widget_create_tree_store()
 {
     GtkTreeStore *tree_store;
 
@@ -331,11 +331,12 @@ static GtkTreeIter *usb_widget_tree_store_find_usb_device(GtkTreeStore *tree_sto
     return find_info.dev_iter;
 }
 
-static GtkTreeViewColumn* view_add_toggle_column(GtkTreeView *tree_view, GtkTreeStore *tree_store,
+static GtkTreeViewColumn* view_add_toggle_column(SpiceUsbDeviceWidget *self,
                                                  enum column_id col_id,
                                                  enum column_id visible_col_id,
                                                  tree_item_toggled_cb toggled_cb)
 {
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     GtkCellRenderer     *renderer;
     GtkTreeViewColumn   *view_col;
 
@@ -350,17 +351,19 @@ static GtkTreeViewColumn* view_add_toggle_column(GtkTreeView *tree_view, GtkTree
                     //"cell-background-set", COL_ROW_COLOR_SET,
                     NULL);
 
-    gtk_tree_view_append_column(tree_view, view_col);
+    gtk_tree_view_append_column(priv->tree_view, view_col);
 
     g_object_set_data(G_OBJECT(renderer), "column", (gint *)col_id);
-    g_signal_connect(renderer, "toggled", G_CALLBACK(toggled_cb), tree_store);
+    g_signal_connect(renderer, "toggled", G_CALLBACK(toggled_cb), self);
 
     g_print("view added toggle column [%d : %s]\n", col_id, col_name[col_id]);
     return view_col;
 }
 
-static GtkTreeViewColumn* view_add_text_column(GtkTreeView *tree_view, enum column_id col_id)
+static GtkTreeViewColumn* view_add_text_column(SpiceUsbDeviceWidget *self,
+                                               enum column_id col_id)
 {
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     GtkCellRenderer     *renderer;
     GtkTreeViewColumn   *view_col;
 
@@ -374,16 +377,17 @@ static GtkTreeViewColumn* view_add_text_column(GtkTreeView *tree_view, enum colu
                     //"cell-background-set", COL_ROW_COLOR_SET,
                     NULL);
 
-    gtk_tree_view_append_column(tree_view, view_col);
+    gtk_tree_view_append_column(priv->tree_view, view_col);
 
     g_print("view added text column [%d : %s]\n", col_id, col_name[col_id]);
     return view_col;
 }
 
-static GtkTreeViewColumn* view_add_pixbuf_column(GtkTreeView *tree_view, GtkTreeStore *tree_store,
+static GtkTreeViewColumn* view_add_pixbuf_column(SpiceUsbDeviceWidget *self,
                                                  enum column_id col_id,
                                                  enum column_id visible_col_id)
 {
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     GtkCellRenderer     *renderer;
     GtkTreeViewColumn   *view_col;
 
@@ -406,7 +410,7 @@ static GtkTreeViewColumn* view_add_pixbuf_column(GtkTreeView *tree_view, GtkTree
         g_print("view added pixbuf col[%d : %s] visible when[%d : %s]\n",
                 col_id, col_name[col_id], visible_col_id, col_name[visible_col_id]);
     }
-    gtk_tree_view_append_column(tree_view, view_col);
+    gtk_tree_view_append_column(priv->tree_view, view_col);
     return view_col;
 }
 
@@ -435,15 +439,103 @@ static void tree_item_toggle_set(GtkTreeStore *tree_store, GtkTreeIter *iter, en
     gtk_tree_store_set(tree_store, iter, col_id, new_val, -1);
 }
 
+typedef struct _connect_cb_data {
+    SpiceUsbDeviceWidget *self;
+    SpiceUsbDevice *usb_dev;
+} connect_cb_data;
+
+static void connect_cb_data_free(connect_cb_data *user_data)
+{
+    spice_usb_device_widget_update_status(user_data->self);
+    g_object_unref(user_data->self);
+    //g_object_unref(user_data->usb_dev);
+    g_free(user_data);
+}
+
+static void usb_widget_connect_cb(GObject *source_object, GAsyncResult *res, gpointer user_data)
+{
+    connect_cb_data *cb_data = user_data;
+    SpiceUsbDeviceWidget *self = cb_data->self;
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
+    SpiceUsbDevice *usb_dev = cb_data->usb_dev;
+    GError *err = NULL;
+    gchar *desc;
+
+    desc = spice_usb_device_get_description(usb_dev, priv->device_format_string);
+    g_print("Connect cb: %s\n", desc);
+
+    spice_usb_device_manager_connect_device_finish(priv->manager, res, &err);
+    if (err) {
+        g_prefix_error(&err, "Device connect failed %s: ", desc);
+        SPICE_DEBUG("%s", err->message);
+        g_signal_emit(self, signals[CONNECT_FAILED], 0, usb_dev, err);
+        g_error_free(err);
+
+        /* don't trigger a disconnect if connect failed */
+        /*
+        g_signal_handlers_block_by_func(GTK_TOGGLE_BUTTON(user_data->check),
+                                        checkbox_clicked_cb, self);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(user_data->check), FALSE);
+        g_signal_handlers_unblock_by_func(GTK_TOGGLE_BUTTON(user_data->check),
+                                        checkbox_clicked_cb, self);
+        */
+    }
+    g_free(desc);
+    connect_cb_data_free(user_data);
+}
+
+static void usb_widget_disconnect_cb(GObject *source_object, GAsyncResult *res, gpointer user_data)
+{
+    connect_cb_data *cb_data = user_data;
+    SpiceUsbDeviceWidget *self = cb_data->self;
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
+    SpiceUsbDevice *usb_dev = cb_data->usb_dev;
+    GError *err = NULL;
+    gchar *desc;
+
+    desc = spice_usb_device_get_description(usb_dev, priv->device_format_string);
+    g_print("Disconnect %s\n", desc);
+
+    spice_usb_device_manager_disconnect_device_finish(priv->manager, res, &err);
+    if (err) {
+        g_prefix_error(&err, "Device disconnect failed %s: ", desc);
+        SPICE_DEBUG("%s", err->message);
+        g_error_free(err);
+    }
+    g_free(desc);
+    connect_cb_data_free(user_data);
+}
+
 static void tree_item_toggled_cb_redirect(GtkCellRendererToggle *cell, gchar *path_str, gpointer user_data)
 {
-    GtkTreeStore *tree_store = (GtkTreeStore *)user_data;
+    SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
+    GtkTreeStore *tree_store = priv->tree_store;
+    connect_cb_data *cb_data = g_new(connect_cb_data, 1);
+    SpiceUsbDevice *usb_dev;
     GtkTreeIter iter;
     gboolean new_redirect_val;
+    
 
     new_redirect_val = !tree_item_toggle_get_val(tree_store, path_str, &iter, COL_REDIRECT);
-    tree_item_toggle_set(tree_store, &iter, COL_REDIRECT, new_redirect_val);
     g_print("Redirect: %s\n", new_redirect_val ? "ON" : "OFF");
+    tree_item_toggle_set(tree_store, &iter, COL_REDIRECT, new_redirect_val);
+
+    gtk_tree_model_get(GTK_TREE_MODEL(tree_store), &iter, COL_ITEM_DATA, (gpointer *)&usb_dev, -1);
+    cb_data->self = g_object_ref(self);
+    //cb_data->usb_dev = g_object_ref(usb_dev);
+
+    if (new_redirect_val) {
+        spice_usb_device_manager_connect_device_async(priv->manager, usb_dev,
+                                                      NULL, /* cancellable */
+                                                      usb_widget_connect_cb, cb_data);
+    } else {
+        spice_usb_device_manager_disconnect_device_async(priv->manager, usb_dev,
+                                                         NULL, /* cancellable */
+                                                         usb_widget_disconnect_cb, cb_data);
+
+    }
+    spice_usb_device_widget_update_status(self);
 }
 
 static void tree_item_toggled_cb_started(GtkCellRendererToggle *cell, gchar *path_str, gpointer user_data)
@@ -1131,34 +1223,35 @@ spice_usb_device_widget_show_info_bar(SpiceUsbDeviceWidget *self,
     gtk_widget_show_all(priv->info_bar);
 }
 
-static GtkTreeView *usb_widget_create_tree_view(GtkTreeStore *tree_store)
+static void spice_usb_device_widget_create_tree_view(SpiceUsbDeviceWidget *self)
 {
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
+    GtkTreeStore *tree_store = usb_widget_create_tree_store();
     GtkTreeView *tree_view = GTK_TREE_VIEW(gtk_tree_view_new());
 
-    //gtk_tree_view_set_rules_hint(tree_view, TRUE);
-    //gtk_tree_view_set_search_column(tree_view, COL_VENDOR);
-
-    view_add_toggle_column(tree_view, tree_store, COL_REDIRECT, COL_DEV_ITEM, tree_item_toggled_cb_redirect);
-
-    view_add_text_column(tree_view, COL_ADDRESS);
-
-    view_add_pixbuf_column(tree_view, tree_store, COL_CONNECT_ICON, COL_REDIRECT);
-    view_add_pixbuf_column(tree_view, tree_store, COL_CD_ICON, COL_CD_DEV);
-
-    view_add_text_column(tree_view, COL_VENDOR);
-    view_add_text_column(tree_view, COL_PRODUCT);
-    view_add_text_column(tree_view, COL_REVISION);
-    view_add_text_column(tree_view, COL_ALIAS);
-
-    view_add_toggle_column(tree_view, tree_store, COL_STARTED, COL_LUN_ITEM, tree_item_toggled_cb_started);
-    view_add_toggle_column(tree_view, tree_store, COL_LOADED, COL_LUN_ITEM, tree_item_toggled_cb_loaded);
-    view_add_toggle_column(tree_view, tree_store, COL_LOCKED, COL_LUN_ITEM, tree_item_toggled_cb_locked);
-
-    view_add_text_column(tree_view, COL_FILE);
+    priv->tree_view = tree_view;
+    priv->tree_store = tree_store;
 
     gtk_tree_view_set_model(tree_view, GTK_TREE_MODEL(tree_store));
-
     g_object_unref(tree_store); /* destroy tree_store automatically with tree_view */
+
+    view_add_toggle_column(self, COL_REDIRECT, COL_DEV_ITEM, tree_item_toggled_cb_redirect);
+
+    view_add_text_column(self, COL_ADDRESS);
+
+    view_add_pixbuf_column(self, COL_CONNECT_ICON, COL_REDIRECT);
+    view_add_pixbuf_column(self, COL_CD_ICON, COL_CD_DEV);
+
+    view_add_text_column(self, COL_VENDOR);
+    view_add_text_column(self, COL_PRODUCT);
+    view_add_text_column(self, COL_REVISION);
+    view_add_text_column(self, COL_ALIAS);
+
+    view_add_toggle_column(self, COL_STARTED, COL_LUN_ITEM, tree_item_toggled_cb_started);
+    view_add_toggle_column(self, COL_LOADED, COL_LUN_ITEM, tree_item_toggled_cb_loaded);
+    view_add_toggle_column(self, COL_LOCKED, COL_LUN_ITEM, tree_item_toggled_cb_locked);
+
+    view_add_text_column(self, COL_FILE);
 
     /* ???? */
     gtk_tree_selection_set_mode(
@@ -1166,11 +1259,9 @@ static GtkTreeView *usb_widget_create_tree_view(GtkTreeStore *tree_store)
             GTK_SELECTION_NONE);
 
     set_selection_handler(tree_view);
-
-    return tree_view;
 }
 
-static void signals_connect(SpiceUsbDeviceWidget *self)
+static void spice_usb_device_widget_signals_connect(SpiceUsbDeviceWidget *self)
 {
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
 
@@ -1232,9 +1323,8 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
     priv->icon_connected = get_named_icon("network-transmit-receive", 24);
     priv->icon_disconn = get_named_icon("network-offline", 24);
 
-    priv->tree_store = usb_widget_create_tree_store(priv->manager);
-    priv->tree_view = usb_widget_create_tree_view(priv->tree_store);
-    signals_connect(self);
+    spice_usb_device_widget_create_tree_view(self);
+    spice_usb_device_widget_signals_connect(self);
 
     hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_box_pack_start(GTK_BOX(self), hbox, FALSE, FALSE, 0);
@@ -1495,98 +1585,6 @@ static gboolean spice_usb_device_widget_update_status(gpointer user_data)
 
     return FALSE;
 }
-
-#if 0
-typedef struct _connect_cb_data {
-    GtkWidget *check;
-    SpiceUsbDeviceWidget *self;
-} connect_cb_data;
-
-static void connect_cb_data_free(connect_cb_data *user_data)
-{
-    spice_usb_device_widget_update_status(user_data->self);
-    g_object_unref(user_data->check);
-    g_object_unref(user_data->self);
-    g_free(user_data);
-}
-
-static void _disconnect_cb(GObject *gobject, GAsyncResult *res, gpointer user_data)
-{
-    SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
-    connect_cb_data *user_data = user_data;
-    GError *err = NULL;
-
-    spice_usb_device_manager_disconnect_device_finish(manager, res, &err);
-    if (err) {
-        SPICE_DEBUG("Device disconnection failed");
-        g_error_free(err);
-    }
-
-    connect_cb_data_free(user_data);
-}
-
-static void checkbox_clicked_cb(GtkWidget *check, gpointer user_data);
-static void connect_cb(GObject *gobject, GAsyncResult *res, gpointer user_data)
-{
-    SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
-    connect_cb_data *user_data = user_data;
-    SpiceUsbDeviceWidget *self = user_data->self;
-    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    SpiceUsbDevice *device;
-    GError *err = NULL;
-    gchar *desc;
-
-    spice_usb_device_manager_connect_device_finish(manager, res, &err);
-    if (err) {
-        device = g_object_get_data(G_OBJECT(user_data->check), "usb-device");
-        desc = spice_usb_device_get_description(device,
-                                                priv->device_format_string);
-        g_prefix_error(&err, "Could not redirect %s: ", desc);
-        g_free(desc);
-
-        SPICE_DEBUG("%s", err->message);
-        g_signal_emit(self, signals[CONNECT_FAILED], 0, device, err);
-        g_error_free(err);
-
-        /* don't trigger a disconnect if connect failed */
-        g_signal_handlers_block_by_func(GTK_TOGGLE_BUTTON(user_data->check),
-                                        checkbox_clicked_cb, self);
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(user_data->check), FALSE);
-        g_signal_handlers_unblock_by_func(GTK_TOGGLE_BUTTON(user_data->check),
-                                        checkbox_clicked_cb, self);
-    }
-
-    connect_cb_data_free(user_data);
-}
-
-static void checkbox_clicked_cb(GtkWidget *check, gpointer user_data)
-{
-    SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
-    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    SpiceUsbDevice *device;
-
-    device = g_object_get_data(G_OBJECT(check), "usb-device");
-    connect_cb_data *user_data = g_new(connect_cb_data, 1);
-    user_data->check = g_object_ref(check);
-    user_data->self  = g_object_ref(self);
-
-    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(check))) {
-        spice_usb_device_manager_connect_device_async(priv->manager,
-                                                      device,
-                                                      NULL,
-                                                      connect_cb,
-                                                      user_data);
-    } else {
-        spice_usb_device_manager_disconnect_device_async(priv->manager,
-                                                         device,
-                                                         NULL,
-                                                         _disconnect_cb,
-                                                         user_data);
-
-    }
-    spice_usb_device_widget_update_status(self);
-}
-#endif
 
 #if 0
 static void checkbox_usb_device_destroy_notify(gpointer user_data)

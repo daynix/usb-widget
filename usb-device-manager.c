@@ -492,7 +492,6 @@ void spice_usb_device_manager_connect_device_async(
 {
     spice_usb_device_manager_connect_device_sync(self, device);
     callback(G_OBJECT(self), NULL, user_data);
-
 }
 
 void spice_usb_device_manager_disconnect_device_async(
@@ -509,12 +508,18 @@ void spice_usb_device_manager_disconnect_device_async(
 gboolean spice_usb_device_manager_connect_device_finish(
     SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
 {
+    if (err) {
+        *err = NULL;
+    }
     return TRUE;
 }
 
 gboolean spice_usb_device_manager_disconnect_device_finish(
     SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
 {
+    if (err) {
+        *err = NULL;
+    }
     return TRUE;
 }
 
