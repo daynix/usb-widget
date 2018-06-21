@@ -528,7 +528,7 @@ spice_usb_device_manager_can_redirect_device(SpiceUsbDeviceManager  *self,
 
 gboolean spice_usb_device_manager_is_redirecting(SpiceUsbDeviceManager *self)
 {
-    return TRUE;
+    return FALSE;
 }
 
 gboolean spice_usb_device_manager_is_device_cd(SpiceUsbDeviceManager *self,

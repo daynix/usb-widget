@@ -131,6 +131,7 @@ enum column_id
     COL_DEV_ITEM,
     COL_ITEM_DATA,
     COL_CONNECTED,
+    COL_CAN_REDIRECT,
     COL_ROW_COLOR,
     COL_ROW_COLOR_SET,
     NUM_COLS,
@@ -158,6 +159,7 @@ static const char *col_name[NUM_COLS] =
     "?DEV_ITEM",
     "?ITEM_DATA",
     "?CONNECTED",
+    "?CAN_REDIRECT",
     "?ROW_COLOR",
     "?ROW_COLOR_SET"
 };
@@ -202,6 +204,7 @@ static GtkTreeStore* usb_widget_create_tree_store()
                         G_TYPE_BOOLEAN, /* COL_DEV_ITEM */
                         G_TYPE_POINTER, /* COL_ITEM_DATA */
                         G_TYPE_BOOLEAN, /* COL_CONNECTED */
+                        G_TYPE_BOOLEAN, /* COL_CAN_REDIRECT */
                         G_TYPE_STRING, /* COL_ROW_COLOR */
                         G_TYPE_BOOLEAN /* COL_ROW_COLOR_SET */ );
     g_print("tree store created\n");
@@ -241,7 +244,7 @@ static GtkTreePath *usb_widget_add_device(SpiceUsbDeviceWidget *self,
     spice_usb_device_get_info(usb_device, &dev_info);
     addr_str = g_strdup_printf("%d:%d", (gint)dev_info.bus, (gint)dev_info.address);
     is_dev_connected = spice_usb_device_manager_is_device_connected(usb_dev_mgr, usb_device);
-    spice_usb_device_manager_is_device_cd(usb_dev_mgr, usb_device);
+    is_dev_cd = spice_usb_device_manager_is_device_cd(usb_dev_mgr, usb_device);
     g_print("usb device a:[%s] p:[%s] m:[%s] conn:%d cd:%d\n",
         addr_str, dev_info.vendor, dev_info.product, is_dev_connected, is_dev_cd);
 
@@ -257,9 +260,12 @@ static GtkTreePath *usb_widget_add_device(SpiceUsbDeviceWidget *self,
         COL_DEV_ITEM, TRUE, /* USB device item */
         COL_ITEM_DATA, (gpointer)usb_device,
         COL_CONNECTED, is_dev_connected,
+        COL_CAN_REDIRECT, TRUE,
         COL_ROW_COLOR, "beige",
         COL_ROW_COLOR_SET, TRUE,
         -1);
+
+    priv->device_count++;
 
     /* get all the luns */
     lun_array = spice_usb_device_manager_get_device_luns(usb_dev_mgr, usb_device);
@@ -342,9 +348,29 @@ static GtkTreeIter *usb_widget_tree_store_find_usb_device(GtkTreeStore *tree_sto
     }
 }
 
+static gboolean usb_widget_remove_device(SpiceUsbDeviceWidget *self,
+                                         SpiceUsbDevice *usb_device)
+{
+    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
+    GtkTreeIter *old_dev_iter;
+
+    old_dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_device);
+    if (old_dev_iter != NULL) {
+        g_print("Device removed\n");
+        gtk_tree_store_remove(priv->tree_store, old_dev_iter);
+        priv->device_count--;
+        g_free(old_dev_iter);
+        return TRUE;
+    } else {
+        g_print("Device not found!\n");
+        return FALSE;
+    }
+}
+
 static GtkTreeViewColumn* view_add_toggle_column(SpiceUsbDeviceWidget *self,
-                                                 enum column_id col_id,
+                                                 enum column_id toggle_col_id,
                                                  enum column_id visible_col_id,
+                                                 enum column_id sensitive_col_id,
                                                  tree_item_toggled_cb toggled_cb)
 {
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
@@ -353,21 +379,31 @@ static GtkTreeViewColumn* view_add_toggle_column(SpiceUsbDeviceWidget *self,
 
     renderer = gtk_cell_renderer_toggle_new();
 
-    view_col = gtk_tree_view_column_new_with_attributes(
-                    col_name[col_id],
-                    renderer,
-                    "active", col_id,
-                    "visible", visible_col_id,
-                    //"cell-background", COL_ROW_COLOR,
-                    //"cell-background-set", COL_ROW_COLOR_SET,
-                    NULL);
+    if (sensitive_col_id != INVALID_COL) {
+        view_col = gtk_tree_view_column_new_with_attributes(
+                        col_name[toggle_col_id],
+                        renderer,
+                        "active", toggle_col_id,
+                        "visible", visible_col_id,
+                        "activatable", sensitive_col_id,
+                        NULL);
+    } else {
+        view_col = gtk_tree_view_column_new_with_attributes(
+                        col_name[toggle_col_id],
+                        renderer,
+                        "active", toggle_col_id,
+                        "visible", visible_col_id,
+                        NULL);
+    }
 
     gtk_tree_view_append_column(priv->tree_view, view_col);
 
-    g_object_set_data(G_OBJECT(renderer), "column", (gint *)col_id);
+    g_object_set_data(G_OBJECT(renderer), "column", (gint *)toggle_col_id);
     g_signal_connect(renderer, "toggled", G_CALLBACK(toggled_cb), self);
 
-    g_print("view added toggle column [%d : %s]\n", col_id, col_name[col_id]);
+    g_print("view added toggle column [%d : %s] visible when [%d : %s]\n",
+            toggle_col_id, col_name[toggle_col_id],
+            visible_col_id, col_name[visible_col_id]);
     return view_col;
 }
 
@@ -651,20 +687,13 @@ static void device_removed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
     SpiceUsbDevice *usb_device, gpointer user_data)
 {
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
-    SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    GtkTreeIter *old_dev_iter;
+    gboolean dev_removed;
 
     g_print("Signal: Device Removed\n");
 
-    old_dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_device);
-    if (old_dev_iter != NULL) {
-        g_print("Remove device iter %p\n", old_dev_iter);
-        gtk_tree_store_remove(priv->tree_store, old_dev_iter);
-        g_print("Removed, now show\n");
+    dev_removed = usb_widget_remove_device(self, usb_device);
+    if (dev_removed) {
         spice_usb_device_widget_update_status(self);
-        g_free(old_dev_iter);
-    } else {
-        g_print("Device not found!\n");
     }
 }
 
@@ -1265,7 +1294,7 @@ static void spice_usb_device_widget_create_tree_view(SpiceUsbDeviceWidget *self)
     gtk_tree_view_set_model(tree_view, GTK_TREE_MODEL(tree_store));
     g_object_unref(tree_store); /* destroy tree_store automatically with tree_view */
 
-    view_add_toggle_column(self, COL_REDIRECT, COL_DEV_ITEM, tree_item_toggled_cb_redirect);
+    view_add_toggle_column(self, COL_REDIRECT, COL_DEV_ITEM, COL_CAN_REDIRECT, tree_item_toggled_cb_redirect);
 
     view_add_text_column(self, COL_ADDRESS);
 
@@ -1277,9 +1306,9 @@ static void spice_usb_device_widget_create_tree_view(SpiceUsbDeviceWidget *self)
     view_add_text_column(self, COL_REVISION);
     view_add_text_column(self, COL_ALIAS);
 
-    view_add_toggle_column(self, COL_STARTED, COL_LUN_ITEM, tree_item_toggled_cb_started);
-    view_add_toggle_column(self, COL_LOADED, COL_LUN_ITEM, tree_item_toggled_cb_loaded);
-    view_add_toggle_column(self, COL_LOCKED, COL_LUN_ITEM, tree_item_toggled_cb_locked);
+    view_add_toggle_column(self, COL_STARTED, COL_LUN_ITEM, INVALID_COL, tree_item_toggled_cb_started);
+    view_add_toggle_column(self, COL_LOADED, COL_LUN_ITEM, INVALID_COL, tree_item_toggled_cb_loaded);
+    view_add_toggle_column(self, COL_LOCKED, COL_LUN_ITEM, INVALID_COL, tree_item_toggled_cb_locked);
 
     view_add_text_column(self, COL_FILE);
 
@@ -1520,7 +1549,6 @@ GtkWidget *spice_usb_device_widget_new(SpiceSession    *session,
 /* ------------------------------------------------------------------ */
 /* callbacks                                                          */
 
-#if 0
 static SpiceUsbDevice *get_usb_device(GtkWidget *widget)
 {
     if (!GTK_IS_ALIGNMENT(widget))
@@ -1530,44 +1558,52 @@ static SpiceUsbDevice *get_usb_device(GtkWidget *widget)
     return g_object_get_data(G_OBJECT(widget), "usb-device");
 }
 
-static void check_can_redirect(GtkWidget *widget, gpointer user_data)
+static gboolean usb_widget_tree_store_check_redirect_foreach_cb(GtkTreeModel *tree_model,
+                                                                GtkTreePath *path, GtkTreeIter *iter,
+                                                                gpointer user_data)
 {
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    SpiceUsbDevice *device;
-    gboolean can_redirect;
-    GError *err = NULL;
+    SpiceUsbDevice *usb_device;
+    gboolean is_lun_item;
 
-    device = get_usb_device(widget);
-    if (!device)
-        return; /* Non device widget, ie the info_bar */
+    gtk_tree_model_get(tree_model, iter,
+                       COL_LUN_ITEM, &is_lun_item,
+                       COL_ITEM_DATA, (gpointer *)&usb_device,
+                       -1);
+    if (!is_lun_item) {
+        gboolean can_redirect;
 
-    priv->device_count++;
+        if (spice_usb_device_manager_is_redirecting(priv->manager)) {
+            can_redirect = FALSE;
+        } else {
+            GError *err = NULL;
 
-    if (spice_usb_device_manager_is_redirecting(priv->manager)) {
-        can_redirect = FALSE;
-    } else {
-        can_redirect = spice_usb_device_manager_can_redirect_device(priv->manager,
-                                                                    device, &err);
-        /* If we cannot redirect this device, append the error message to
-           err_msg, but only if it is *not* already there! */
-        if (!can_redirect) {
-            if (priv->err_msg) {
-                if (!strstr(priv->err_msg, err->message)) {
-                    gchar *old_err_msg = priv->err_msg;
-                    priv->err_msg = g_strdup_printf("%s\n%s", priv->err_msg,
-                                                    err->message);
-                    g_free(old_err_msg);
+            can_redirect = spice_usb_device_manager_can_redirect_device(priv->manager,
+                                                                        usb_device, &err);
+
+            /* If we cannot redirect this device, append the error message to
+               err_msg, but only if it is *not* already there! */
+            if (!can_redirect) {
+                if (priv->err_msg) {
+                    if (!strstr(priv->err_msg, err->message)) {
+                        gchar *old_err_msg = priv->err_msg;
+                        priv->err_msg = g_strdup_printf("%s\n%s", priv->err_msg,
+                                                        err->message);
+                        g_free(old_err_msg);
+                    }
+                } else {
+                    priv->err_msg = g_strdup(err->message);
                 }
-            } else {
-                priv->err_msg = g_strdup(err->message);
             }
+            g_clear_error(&err);
         }
-        g_clear_error(&err);
+        gtk_tree_store_set(priv->tree_store, iter,
+                           COL_CAN_REDIRECT, TRUE, //can_redirect,
+                           -1);
     }
-    gtk_widget_set_sensitive(widget, can_redirect);
+    return FALSE; /* continue iterating */
 }
-#endif
 
 static gboolean spice_usb_device_widget_update_status(gpointer user_data)
 {
@@ -1576,11 +1612,6 @@ static gboolean spice_usb_device_widget_update_status(gpointer user_data)
     gchar *str, *markup_str;
     const gchar *free_channels_str;
     int free_channels;
-    gboolean redirecting;
-
-    gtk_widget_show_all(GTK_WIDGET(priv->tree_view));
-
-    redirecting = spice_usb_device_manager_is_redirecting(priv->manager);
 
     g_object_get(priv->manager, "free-channels", &free_channels, NULL);
     free_channels_str = ngettext(_("Select USB devices to redirect (%d free channel)"),
@@ -1592,15 +1623,18 @@ static gboolean spice_usb_device_widget_update_status(gpointer user_data)
     g_free(markup_str);
     g_free(str);
 
-    priv->device_count = 0;
-    //gtk_container_foreach(GTK_CONTAINER(self), check_can_redirect, self);
+    gtk_tree_model_foreach(GTK_TREE_MODEL(priv->tree_store),
+                           usb_widget_tree_store_check_redirect_foreach_cb, self);
 
+    gtk_widget_show_all(GTK_WIDGET(priv->tree_view));
+
+    /* Show messages in the info, if necessary */
     if (priv->err_msg) {
         spice_usb_device_widget_show_info_bar(self, priv->err_msg,
                                               GTK_MESSAGE_INFO, priv->icon_warning);
         g_free(priv->err_msg);
         priv->err_msg = NULL;
-    } else if (redirecting) {
+    } else if ( spice_usb_device_manager_is_redirecting(priv->manager)) {
         spice_usb_device_widget_show_info_bar(self, _("Redirecting USB Device..."),
                                               GTK_MESSAGE_INFO, priv->icon_info);
     } else {
