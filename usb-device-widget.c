@@ -99,6 +99,8 @@ struct _SpiceUsbDeviceWidgetPrivate {
     GdkPixbuf *icon_cd;
     GdkPixbuf *icon_connected;
     GdkPixbuf *icon_disconn;
+    GdkPixbuf *icon_warning;
+    GdkPixbuf *icon_info;
     gchar *err_msg;
     gsize device_count;
 };
@@ -459,10 +461,11 @@ static void usb_widget_connect_cb(GObject *source_object, GAsyncResult *res, gpo
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     SpiceUsbDevice *usb_dev = cb_data->usb_dev;
     GError *err = NULL;
+    GtkTreeIter *dev_iter;
     gchar *desc;
 
     desc = spice_usb_device_get_description(usb_dev, priv->device_format_string);
-    g_print("Connect cb: %s\n", desc);
+    g_print("Connect cb: %p %s\n", usb_dev, desc);
 
     spice_usb_device_manager_connect_device_finish(priv->manager, res, &err);
     if (err) {
@@ -480,6 +483,12 @@ static void usb_widget_connect_cb(GObject *source_object, GAsyncResult *res, gpo
                                         checkbox_clicked_cb, self);
         */
     }
+
+    dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
+    gtk_tree_store_set(priv->tree_store, dev_iter,
+                       COL_CONNECT_ICON, priv->icon_connected,
+                       -1);
+
     g_free(desc);
     connect_cb_data_free(user_data);
 }
@@ -491,10 +500,11 @@ static void usb_widget_disconnect_cb(GObject *source_object, GAsyncResult *res, 
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     SpiceUsbDevice *usb_dev = cb_data->usb_dev;
     GError *err = NULL;
+    GtkTreeIter *dev_iter;
     gchar *desc;
 
     desc = spice_usb_device_get_description(usb_dev, priv->device_format_string);
-    g_print("Disconnect %s\n", desc);
+    g_print("Disconnect cb: %p %s\n", usb_dev, desc);
 
     spice_usb_device_manager_disconnect_device_finish(priv->manager, res, &err);
     if (err) {
@@ -502,6 +512,12 @@ static void usb_widget_disconnect_cb(GObject *source_object, GAsyncResult *res, 
         SPICE_DEBUG("%s", err->message);
         g_error_free(err);
     }
+
+    dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
+    gtk_tree_store_set(priv->tree_store, dev_iter,
+                       COL_CONNECT_ICON, priv->icon_disconn,
+                       -1);
+
     g_free(desc);
     connect_cb_data_free(user_data);
 }
@@ -515,7 +531,6 @@ static void tree_item_toggled_cb_redirect(GtkCellRendererToggle *cell, gchar *pa
     SpiceUsbDevice *usb_dev;
     GtkTreeIter iter;
     gboolean new_redirect_val;
-    
 
     new_redirect_val = !tree_item_toggle_get_val(tree_store, path_str, &iter, COL_REDIRECT);
     g_print("Redirect: %s\n", new_redirect_val ? "ON" : "OFF");
@@ -523,7 +538,7 @@ static void tree_item_toggled_cb_redirect(GtkCellRendererToggle *cell, gchar *pa
 
     gtk_tree_model_get(GTK_TREE_MODEL(tree_store), &iter, COL_ITEM_DATA, (gpointer *)&usb_dev, -1);
     cb_data->self = g_object_ref(self);
-    //cb_data->usb_dev = g_object_ref(usb_dev);
+    cb_data->usb_dev = usb_dev; // g_object_ref(usb_dev);
 
     if (new_redirect_val) {
         spice_usb_device_manager_connect_device_async(priv->manager, usb_dev,
@@ -1193,10 +1208,10 @@ static void
 spice_usb_device_widget_show_info_bar(SpiceUsbDeviceWidget *self,
                                       const gchar          *message,
                                       GtkMessageType        message_type,
-                                      const gchar          *stock_icon_id)
+                                      GdkPixbuf            *icon_pixbuf)
 {
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    GtkWidget *info_bar, *content_area, *hbox, *widget;
+    GtkWidget *info_bar, *content_area, *hbox, *icon, *label;
 
     spice_usb_device_widget_hide_info_bar(self);
 
@@ -1207,12 +1222,11 @@ spice_usb_device_widget_show_info_bar(SpiceUsbDeviceWidget *self,
     hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_container_add(GTK_CONTAINER(content_area), hbox);
 
-    widget = gtk_image_new_from_icon_name(stock_icon_id,
-                                          GTK_ICON_SIZE_SMALL_TOOLBAR);
-    gtk_box_pack_start(GTK_BOX(hbox), widget, FALSE, FALSE, 0);
+    icon = gtk_image_new_from_pixbuf(icon_pixbuf);
+    gtk_box_pack_start(GTK_BOX(hbox), icon, FALSE, FALSE, 10);
 
-    widget = gtk_label_new(message);
-    gtk_box_pack_start(GTK_BOX(hbox), widget, TRUE, TRUE, 0);
+    label = gtk_label_new(message);
+    gtk_box_pack_start(GTK_BOX(hbox), label, TRUE, TRUE, 0);
 
     priv->info_bar = gtk_alignment_new(0.0, 0.0, 1.0, 0.0);
     gtk_alignment_set_padding(GTK_ALIGNMENT(priv->info_bar), 0, 0, 0, 0);
@@ -1310,18 +1324,19 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
     g_free(str);
     gtk_box_pack_start(GTK_BOX(self), priv->label, FALSE, FALSE, 0);
 
+    priv->icon_cd = get_named_icon("media-optical", GTK_ICON_SIZE_LARGE_TOOLBAR);
+    priv->icon_connected = get_named_icon("network-transmit-receive", GTK_ICON_SIZE_LARGE_TOOLBAR);
+    priv->icon_disconn = get_named_icon("network-offline", GTK_ICON_SIZE_LARGE_TOOLBAR);
+    priv->icon_warning = get_named_icon("dialog-warning", GTK_ICON_SIZE_LARGE_TOOLBAR);
+    priv->icon_info = get_named_icon("dialog-information", GTK_ICON_SIZE_LARGE_TOOLBAR);
+
     priv->manager = spice_usb_device_manager_get(priv->session, &err);
     if (err) {
         spice_usb_device_widget_show_info_bar(self, err->message,
-                                              GTK_MESSAGE_WARNING,
-                                              "dialog-warning");
+                                              GTK_MESSAGE_WARNING, priv->icon_warning);
         g_clear_error(&err);
         return;
     }
-
-    priv->icon_cd = get_named_icon("media-optical", 24);
-    priv->icon_connected = get_named_icon("network-transmit-receive", 24);
-    priv->icon_disconn = get_named_icon("network-offline", 24);
 
     spice_usb_device_widget_create_tree_view(self);
     spice_usb_device_widget_signals_connect(self);
@@ -1566,22 +1581,19 @@ static gboolean spice_usb_device_widget_update_status(gpointer user_data)
 
     if (priv->err_msg) {
         spice_usb_device_widget_show_info_bar(self, priv->err_msg,
-                                              GTK_MESSAGE_INFO,
-                                              "dialog-warning");
+                                              GTK_MESSAGE_INFO, priv->icon_warning);
         g_free(priv->err_msg);
         priv->err_msg = NULL;
     } else if (redirecting) {
         spice_usb_device_widget_show_info_bar(self, _("Redirecting USB Device..."),
-                                              GTK_MESSAGE_INFO,
-                                              "dialog-information");
+                                              GTK_MESSAGE_INFO, priv->icon_info);
     } else {
         spice_usb_device_widget_hide_info_bar(self);
     }
 
     if (priv->device_count == 0)
         spice_usb_device_widget_show_info_bar(self, _("No USB devices detected"),
-                                              GTK_MESSAGE_INFO,
-                                              "dialog-information");
+                                              GTK_MESSAGE_INFO, priv->icon_info);
 
     return FALSE;
 }

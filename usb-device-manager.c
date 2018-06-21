@@ -1,5 +1,6 @@
 /* -*- Mode: C; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 
+#include <config.h>
 #include <gtk/gtk.h>
 #include "usb-device-manager.h"
 
@@ -419,7 +420,6 @@ gboolean spice_usb_device_get_info(SpiceUsbDevice *device, spice_usb_device_info
  */
 gchar *spice_usb_device_get_description(SpiceUsbDevice *device, const gchar *format)
 {
-#ifdef USE_USBREDIR
     guint16 bus, address, vid, pid;
     gchar *description, *descriptor, *manufacturer = NULL, *product = NULL;
 
@@ -444,14 +444,9 @@ gchar *spice_usb_device_get_description(SpiceUsbDevice *device, const gchar *for
 
     description = g_strdup_printf(format, manufacturer, product, descriptor, bus, address);
 
-    g_free(manufacturer);
     g_free(descriptor);
-    g_free(product);
 
     return description;
-#else
-    return NULL;
-#endif
 }
 
 
