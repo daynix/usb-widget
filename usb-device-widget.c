@@ -328,9 +328,18 @@ static GtkTreeIter *usb_widget_tree_store_find_usb_device(GtkTreeStore *tree_sto
                                                           SpiceUsbDevice *usb_device)
 {
     tree_find_usb_dev find_info = { .usb_dev = usb_device, .dev_iter = NULL };
+    GtkTreeIter *iter;
+
     gtk_tree_model_foreach(GTK_TREE_MODEL(tree_store),
                            usb_widget_tree_store_find_usb_dev_foreach_cb, (gpointer)&find_info);
-    return find_info.dev_iter;
+
+    if (find_info.dev_iter) {
+        iter = g_malloc(sizeof(*iter));
+        *iter = *find_info.dev_iter;
+        return iter;
+    } else {
+        return NULL;
+    }
 }
 
 static GtkTreeViewColumn* view_add_toggle_column(SpiceUsbDeviceWidget *self,
@@ -485,10 +494,12 @@ static void usb_widget_connect_cb(GObject *source_object, GAsyncResult *res, gpo
     }
 
     dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
-    gtk_tree_store_set(priv->tree_store, dev_iter,
-                       COL_CONNECT_ICON, priv->icon_connected,
-                       -1);
-
+    if (dev_iter) {
+        gtk_tree_store_set(priv->tree_store, dev_iter,
+                           COL_CONNECT_ICON, priv->icon_connected,
+                          -1);
+        g_free(dev_iter);
+    }
     g_free(desc);
     connect_cb_data_free(user_data);
 }
@@ -514,10 +525,12 @@ static void usb_widget_disconnect_cb(GObject *source_object, GAsyncResult *res, 
     }
 
     dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
-    gtk_tree_store_set(priv->tree_store, dev_iter,
-                       COL_CONNECT_ICON, priv->icon_disconn,
-                       -1);
-
+    if (dev_iter) {
+        gtk_tree_store_set(priv->tree_store, dev_iter,
+                           COL_CONNECT_ICON, priv->icon_disconn,
+                           -1);
+        g_free(dev_iter);
+    }
     g_free(desc);
     connect_cb_data_free(user_data);
 }
@@ -649,6 +662,7 @@ static void device_removed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
         gtk_tree_store_remove(priv->tree_store, old_dev_iter);
         g_print("Removed, now show\n");
         spice_usb_device_widget_update_status(self);
+        g_free(old_dev_iter);
     } else {
         g_print("Device not found!\n");
     }
@@ -673,6 +687,7 @@ static void device_changed_cb(SpiceUsbDeviceManager *usb_dev_mgr,
         gtk_tree_path_free(new_dev_path);
 
         spice_usb_device_widget_update_status(self);
+        g_free(old_dev_iter);
     } else {
         g_print("Device not found!\n");
     }
@@ -691,6 +706,7 @@ static void device_error_cb(SpiceUsbDeviceManager *manager,
     if (dev_iter != NULL) {
         tree_item_toggle_set(priv->tree_store, dev_iter, COL_REDIRECT, FALSE);
         spice_usb_device_widget_update_status(self);
+        g_free(dev_iter);
         //gtk_widget_show_all(GTK_WIDGET(priv->tree_view));
     } else {
         g_print("Device not found!\n");
