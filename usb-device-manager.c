@@ -493,8 +493,10 @@ void spice_usb_device_manager_connect_device_async(
                                              GAsyncReadyCallback callback,
                                              gpointer user_data)
 {
+    GAsyncResult *res = (GAsyncResult *)((gpointer)device); /* provides device access in x_finish() */
+
     spice_usb_device_manager_connect_device_sync(self, device);
-    callback(G_OBJECT(self), NULL, user_data);
+    callback(G_OBJECT(self), res, user_data);
 }
 
 void spice_usb_device_manager_disconnect_device_async(
@@ -504,26 +506,46 @@ void spice_usb_device_manager_disconnect_device_async(
                                              GAsyncReadyCallback callback,
                                              gpointer user_data)
 {
+    GAsyncResult *res = (GAsyncResult *)((gpointer)device); /* provides device access in x_finish() */
+
     spice_usb_device_manager_disconnect_device_sync(self, device);
-    callback(G_OBJECT(self), NULL, user_data);
+    callback(G_OBJECT(self), res, user_data);
 }
 
 gboolean spice_usb_device_manager_connect_device_finish(
     SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
 {
-    if (err) {
-        *err = NULL;
+    SpiceUsbDevice *device = (SpiceUsbDevice *)((gpointer)res);
+
+    if (device->connected) {
+        if (err) {
+            *err = NULL;
+        }
+        return TRUE;
+    } else {
+        if (err) {
+            *err = g_error_new_literal(g_quark_from_static_string("connect"), 1, "Failed to connect");
+        }
+        return FALSE;
     }
-    return TRUE;
 }
 
 gboolean spice_usb_device_manager_disconnect_device_finish(
     SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
 {
-    if (err) {
-        *err = NULL;
+    SpiceUsbDevice *device = (SpiceUsbDevice *)((gpointer)res);
+
+    if (!device->connected) {
+        if (err) {
+            *err = NULL;
+        }
+        return TRUE;
+    } else {
+        if (err) {
+            *err = g_error_new_literal(g_quark_from_static_string("disconnect"), 1, "Failed to disconnect");
+        }
+        return FALSE;
     }
-    return TRUE;
 }
 
 gboolean

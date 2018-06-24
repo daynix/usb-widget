@@ -509,16 +509,33 @@ static void usb_widget_connect_cb(GObject *source_object, GAsyncResult *res, gpo
     GError *err = NULL;
     GtkTreeIter *dev_iter;
     gchar *desc;
+    gboolean finished;
+
+    dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
+    if (!dev_iter) {
+        return;
+    }
 
     desc = spice_usb_device_get_description(usb_dev, priv->device_format_string);
     g_print("Connect cb: %p %s\n", usb_dev, desc);
 
-    spice_usb_device_manager_connect_device_finish(priv->manager, res, &err);
-    if (err) {
+    finished = spice_usb_device_manager_connect_device_finish(priv->manager, res, &err);
+    if (finished) {
+        gtk_tree_store_set(priv->tree_store, dev_iter,
+                           COL_CONNECT_ICON, priv->icon_connected,
+                           -1);
+    } else {
+        gtk_tree_store_set(priv->tree_store, dev_iter,
+                           COL_REDIRECT, FALSE,
+                           -1);
         g_prefix_error(&err, "Device connect failed %s: ", desc);
-        SPICE_DEBUG("%s", err->message);
-        g_signal_emit(self, signals[CONNECT_FAILED], 0, usb_dev, err);
-        g_error_free(err);
+        if (err) {
+            SPICE_DEBUG("%s", err->message);
+            g_signal_emit(self, signals[CONNECT_FAILED], 0, usb_dev, err);
+            g_error_free(err);
+        } else {
+            g_signal_emit(self, signals[CONNECT_FAILED], 0, usb_dev, NULL);
+        }
 
         /* don't trigger a disconnect if connect failed */
         /*
@@ -529,15 +546,8 @@ static void usb_widget_connect_cb(GObject *source_object, GAsyncResult *res, gpo
                                         checkbox_clicked_cb, self);
         */
     }
-
-    dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
-    if (dev_iter) {
-        gtk_tree_store_set(priv->tree_store, dev_iter,
-                           COL_CONNECT_ICON, priv->icon_connected,
-                          -1);
-        g_free(dev_iter);
-    }
     g_free(desc);
+    g_free(dev_iter);
     connect_cb_data_free(user_data);
 }
 
@@ -550,25 +560,33 @@ static void usb_widget_disconnect_cb(GObject *source_object, GAsyncResult *res, 
     GError *err = NULL;
     GtkTreeIter *dev_iter;
     gchar *desc;
+    gboolean finished;
+
+    dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
+    if (!dev_iter) {
+        return;
+    }
 
     desc = spice_usb_device_get_description(usb_dev, priv->device_format_string);
     g_print("Disconnect cb: %p %s\n", usb_dev, desc);
 
-    spice_usb_device_manager_disconnect_device_finish(priv->manager, res, &err);
-    if (err) {
-        g_prefix_error(&err, "Device disconnect failed %s: ", desc);
-        SPICE_DEBUG("%s", err->message);
-        g_error_free(err);
-    }
-
-    dev_iter = usb_widget_tree_store_find_usb_device(priv->tree_store, usb_dev);
-    if (dev_iter) {
+    finished = spice_usb_device_manager_disconnect_device_finish(priv->manager, res, &err);
+    if (finished) {
         gtk_tree_store_set(priv->tree_store, dev_iter,
                            COL_CONNECT_ICON, priv->icon_disconn,
                            -1);
-        g_free(dev_iter);
+    } else {
+        gtk_tree_store_set(priv->tree_store, dev_iter,
+                           COL_REDIRECT, TRUE,
+                           -1);
+        g_prefix_error(&err, "Device disconnect failed %s: ", desc);
+        if (err) {
+            SPICE_DEBUG("%s", err->message);
+            g_error_free(err);
+        }
     }
     g_free(desc);
+    g_free(dev_iter);
     connect_cb_data_free(user_data);
 }
 
