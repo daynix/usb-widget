@@ -15,7 +15,7 @@ default: $(TARGET)
 all: default
 
 #OBJECTS = $(patsubst %.c, %.o, $(wildcard *.c))
-OBJECTS = main.o usb-device-manager.o usb-device-widget.o
+OBJECTS = main.o usb-device-manager.o usb-device-redir-widget.o
 
 #HEADERS = $(wildcard *.h)
 HEADERS = usb-device-manager.h usb-device-widget.h spice-client.h config.h
