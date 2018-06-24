@@ -67,7 +67,7 @@ struct _SpiceUsbDeviceManagerClass
     /*< private >*/
 };
 
-GType spice_usb_device_manager_get_type();
+GType spice_usb_device_manager_get_type(void);
 
 typedef struct _SpiceSession
 {
@@ -87,7 +87,7 @@ typedef struct _SpiceSessionClass
 #define SPICE_IS_SESSION_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), SPICE_TYPE_SESSION))
 #define SPICE_SESSION_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), SPICE_TYPE_SESSION, SpiceSessionClass))
 
-GType spice_session_get_type();
+GType spice_session_get_type(void);
 
 /* Dev Manager API */
 

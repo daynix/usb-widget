@@ -93,7 +93,7 @@ static gboolean spice_usb_device_manager_initable_init(GInitable  *initable,
 {
     SpiceUsbDeviceManager *self = SPICE_USB_DEVICE_MANAGER(initable);
     SpiceUsbDeviceManagerPrivate *priv = self->priv;
-    g_print("spice_usb_device_manager_initable_init %p max_luns:%d\n", self, priv->max_luns);
+    g_print("spice_usb_device_manager_initable_init %p max_luns:%u\n", self, priv->max_luns);
 
     return TRUE;
 }
