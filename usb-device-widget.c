@@ -229,7 +229,7 @@ static GtkTreePath *usb_widget_add_device(SpiceUsbDeviceWidget *self,
     SpiceUsbDeviceManager *usb_dev_mgr = priv->manager;
     GtkTreeIter new_dev_iter;
     spice_usb_device_info dev_info;
-    gboolean is_dev_connected, is_dev_cd;
+    gboolean is_dev_redirected, is_dev_connected, is_dev_cd;
     gchar *addr_str;
     GArray *lun_array;
     guint lun_index;
@@ -244,12 +244,13 @@ static GtkTreePath *usb_widget_add_device(SpiceUsbDeviceWidget *self,
     spice_usb_device_get_info(usb_device, &dev_info);
     addr_str = g_strdup_printf("%d:%d", (gint)dev_info.bus, (gint)dev_info.address);
     is_dev_connected = spice_usb_device_manager_is_device_connected(usb_dev_mgr, usb_device);
+    is_dev_redirected = is_dev_connected;
     is_dev_cd = spice_usb_device_manager_is_device_cd(usb_dev_mgr, usb_device);
     g_print("usb device a:[%s] p:[%s] m:[%s] conn:%d cd:%d\n",
         addr_str, dev_info.vendor, dev_info.product, is_dev_connected, is_dev_cd);
 
     gtk_tree_store_set(tree_store, &new_dev_iter,
-        COL_REDIRECT, TRUE,
+        COL_REDIRECT, is_dev_redirected,
         COL_ADDRESS, addr_str,
         COL_CONNECT_ICON, is_dev_connected ? priv->icon_connected : priv->icon_disconn,
         COL_CD_ICON, priv->icon_cd,
