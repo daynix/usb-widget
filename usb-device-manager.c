@@ -24,6 +24,7 @@ typedef struct _SpiceUsbDeviceInfo {
 struct _SpiceUsbDeviceManagerPrivate {
     SpiceSession *session;
     guint max_luns;
+    gint free_channels;
     gboolean auto_connect;
     gchar *auto_connect_filter;
     gchar *redirect_on_connect;
@@ -82,6 +83,7 @@ static void spice_usb_device_manager_init(SpiceUsbDeviceManager *self)
     SpiceUsbDeviceManagerPrivate *priv;
     priv = SPICE_USB_DEVICE_MANAGER_GET_PRIVATE(self);
     priv->max_luns = 4;
+    priv->free_channels = 1;
     self->priv = priv;
 }
 
@@ -127,7 +129,6 @@ static void spice_usb_device_manager_get_property(GObject     *gobject,
         g_value_set_string(value, "");
         break;
     case PROP_FREE_CHANNELS: {
-        int free_channels = 3;
 #if 0
         int i;
         for (i = 0; i < priv->channels->len; i++) {
@@ -137,7 +138,7 @@ static void spice_usb_device_manager_get_property(GObject     *gobject,
                 free_channels++;
         }
 #endif
-        g_value_set_int(value, free_channels);
+        g_value_set_int(value, priv->free_channels);
         break;
     }
     default:
@@ -459,19 +460,26 @@ gboolean spice_usb_device_manager_is_device_connected(SpiceUsbDeviceManager *man
 gboolean spice_usb_device_manager_connect_device_sync(SpiceUsbDeviceManager *self,
                                                       SpiceUsbDevice *device)
 {
+    SpiceUsbDeviceManagerPrivate *priv = self->priv;
+
     if (!device->connected) {
-        device->connected = TRUE;
-        return TRUE;
-    } else {
-        return FALSE;
+        if (priv->free_channels > 0) {
+            priv->free_channels--;
+            device->connected = TRUE;
+            return TRUE;
+        }
     }
+    return FALSE;
 }
 
 gboolean spice_usb_device_manager_disconnect_device_sync(SpiceUsbDeviceManager *self,
                                                          SpiceUsbDevice *device)
 {
+    SpiceUsbDeviceManagerPrivate *priv = self->priv;
+
     if (device->connected) {
         device->connected = FALSE;
+        priv->free_channels++;
         return TRUE;
     } else {
         return FALSE;
@@ -621,6 +629,7 @@ gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
     dev_info = g_malloc(sizeof(*dev_info));
     /* generate some usb dev info */
     memcpy(dev_info, &_dev_array[0], sizeof(*dev_info));
+    dev_info->connected = FALSE;
     dev_info->devaddr = num_usb_devs + 1;
     dev_info->busnum = 10 * dev_info->devaddr;
 
