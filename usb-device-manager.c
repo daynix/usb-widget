@@ -2,10 +2,11 @@
 
 #include <config.h>
 #include <gtk/gtk.h>
-#include "usb-device-manager.h"
+#include <string.h>
+#include "spice-client.h"
 
 // this is the structure behind SpiceUsbDevice
-typedef struct _SpiceUsbDeviceInfo {
+typedef struct _SpiceUsbDevice {
     guint8  busnum;
     guint8  devaddr;
     guint16 vid;
@@ -16,7 +17,7 @@ typedef struct _SpiceUsbDeviceInfo {
     gboolean connected;
 
     GPtrArray *luns_array;
-} SpiceUsbDevice;
+} _SpiceUsbDevice;
 
 #define SPICE_USB_DEVICE_MANAGER_GET_PRIVATE(obj)                                  \
     (G_TYPE_INSTANCE_GET_PRIVATE ((obj), SPICE_TYPE_USB_DEVICE_MANAGER, SpiceUsbDeviceManagerPrivate))
@@ -785,4 +786,9 @@ spice_usb_device_manager_device_lun_remove(SpiceUsbDeviceManager *self,
         }
     }
     return TRUE;
+}
+
+GType spice_usb_device_get_type(void)
+{
+	return G_TYPE_POINTER;
 }
