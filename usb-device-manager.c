@@ -724,9 +724,11 @@ spice_usb_device_manager_device_lun_load(SpiceUsbDeviceManager *self,
  
     if (!req_lun_info->loaded && load) {
         req_lun_info->loaded = TRUE;
+        g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
         return TRUE;
     } else if (req_lun_info->loaded && !load) {
         req_lun_info->loaded = FALSE;
+        g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
         return TRUE;
     } else {
         return FALSE;
@@ -739,7 +741,7 @@ gboolean
 spice_usb_device_manager_device_lun_change_media(SpiceUsbDeviceManager *self,
                                                  SpiceUsbDevice *device,
                                                  guint lun,
-                                                 gchar *filename)
+                                                 const spice_usb_device_lun_info *lun_info)
 {
     spice_usb_device_lun_info *req_lun_info;
 
@@ -752,7 +754,8 @@ spice_usb_device_manager_device_lun_change_media(SpiceUsbDeviceManager *self,
         if (req_lun_info->file_path != NULL) {
             g_free((gpointer)req_lun_info->file_path);
         }
-        req_lun_info->file_path = g_strdup(filename);
+        req_lun_info->file_path = g_strdup(lun_info->file_path);
+        g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
         return TRUE;
     } else {
         return FALSE;
