@@ -4,8 +4,10 @@ LIBS = `pkg-config --libs gtk+-3.0`
 CC = gcc
 CFLAGS = `pkg-config --cflags gtk+-3.0` -I. 
 CFLAGS += -Wextra
-#CFLAGS += -Wformat-contains-nul -Wformat-extra-args -Wformat-security -Wformat-signedness -Wformat-y2k -Wformat-zero-length
-CFLAGS += -Werror -Wno-deprecated-declarations -Wstrict-prototypes -Werror=unused-variable -Werror=unused-but-set-variable -Werror=unused-function -Wsuggest-attribute=format
+CFLAGS += -Werror
+CFLAGS += -Wformat
+CFLAGS += -Wformat-contains-nul -Wformat-extra-args -Wformat-security -Wformat-signedness -Wformat-y2k -Wformat-zero-length
+CFLAGS += -Wno-deprecated-declarations -Wstrict-prototypes -Werror=unused-variable -Werror=unused-but-set-variable -Werror=unused-function -Wsuggest-attribute=format
 ifneq ($(DEBUG),)
 CFLAGS += -O0 -g -ggdb -rdynamic
 endif
