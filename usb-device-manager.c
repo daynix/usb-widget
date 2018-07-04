@@ -380,8 +380,8 @@ void spice_usb_util_get_device_strings(int bus, int address,
                                        int vendor_id, int product_id,
                                        gchar **manufacturer, gchar **product)
 {
-    *manufacturer = "RedHat-Spice";
-    *product = "Redir-USB";
+    *manufacturer = g_strdup("RedHat-Spice");
+    *product = g_strdup("Redir-USB");
 }
 
 gboolean spice_usb_device_get_info(SpiceUsbDevice *device, spice_usb_device_info *info)
