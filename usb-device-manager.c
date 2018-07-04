@@ -384,9 +384,9 @@ void spice_usb_util_get_device_strings(int bus, int address,
     *product = g_strdup("Redir-USB");
 }
 
-gboolean spice_usb_device_get_info(SpiceUsbDevice *device, spice_usb_device_info *info)
+void spice_usb_device_get_info(SpiceUsbDevice *device, spice_usb_device_info *info)
 {
-    g_return_val_if_fail(device != NULL, FALSE);
+    g_return_if_fail(device != NULL);
 
     info->bus = spice_usb_device_get_busnum(device);
     info->address = spice_usb_device_get_devaddr(device);
@@ -395,8 +395,6 @@ gboolean spice_usb_device_get_info(SpiceUsbDevice *device, spice_usb_device_info
 
     spice_usb_util_get_device_strings(info->bus, info->address,
         info->vendor_id, info->product_id, &info->vendor, &info->product);
-
-    return TRUE;
 }
 
 /**
