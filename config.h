@@ -3,7 +3,8 @@
 
 #define USB_WIDGET_TEST
 #define SPICE_COMPILATION
-#define USE_USBREDIR
+#define USE_NEW_USB_WIDGET
+#define USE_CD_SHARING
 
 #define _(x) x
 #define ngettext(x,y,z) ((z) == 1 ? (x) : (y))
