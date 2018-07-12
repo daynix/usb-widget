@@ -322,7 +322,6 @@ SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
         lun_info.vendor = "RedHat";
         lun_info.product = "Redir DVD";
         lun_info.revision = "1223";
-        lun_info.alias = "my_fedora_25";
         lun_info.started = TRUE;
         lun_info.loaded = TRUE;
         lun_info.locked = FALSE;
@@ -331,7 +330,6 @@ SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
 
         /* add lun 2 */
         lun_info.file_path = "/home/johnd/iso/ubuntu-18-04.iso";
-        lun_info.alias = "my_ubuntu_18_04";
         
         spice_usb_device_manager_add_cd_lun(_usb_dev_manager, &lun_info);
 
@@ -594,7 +592,6 @@ static void spice_usb_device_manager_copy_lun_info(spice_usb_device_lun_info *ne
     new_lun_info->vendor = g_strdup(lun_info->vendor);
     new_lun_info->product = g_strdup(lun_info->product);
     new_lun_info->revision = g_strdup(lun_info->revision);
-    new_lun_info->alias = g_strdup(lun_info->alias);
     new_lun_info->started = lun_info->started;
     new_lun_info->loaded = lun_info->loaded;
     new_lun_info->locked = lun_info->locked;
@@ -607,13 +604,12 @@ static void spice_usb_device_manager_add_lun_to_dev(SpiceUsbDevice *dev_info,
     spice_usb_device_lun_info *new_lun_info = g_malloc(sizeof(*lun_info));
     spice_usb_device_manager_copy_lun_info(new_lun_info, lun_info);
     g_ptr_array_add(dev_info->luns_array, new_lun_info);
-    g_print("add_cd_lun file:%s vendor:%s prod:%s rev:%s alias:%s "
+    g_print("add_cd_lun file:%s vendor:%s prod:%s rev:%s  "
             "started:%d loaded:%d locked:%d - usb dev:%d [%d:%d] as lun:%d\n",
             lun_info->file_path,
             lun_info->vendor,
             lun_info->product,
             lun_info->revision,
-            lun_info->alias,
             lun_info->started,
             lun_info->loaded,
             lun_info->locked,
