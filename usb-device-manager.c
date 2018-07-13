@@ -693,13 +693,13 @@ spice_usb_device_manager_device_lun_lock(SpiceUsbDeviceManager *self,
 
     if (!req_lun_info->locked && lock) {
         req_lun_info->locked = TRUE;
-        return TRUE;
     } else if (req_lun_info->locked && !lock) {
         req_lun_info->locked = FALSE;
-        return TRUE;
     } else {
         return FALSE;
     }
+    g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
+    return TRUE;
 }
 
 /* load or eject device */
@@ -719,14 +719,13 @@ spice_usb_device_manager_device_lun_load(SpiceUsbDeviceManager *self,
     if (!req_lun_info->loaded && load) {
         req_lun_info->loaded = TRUE;
         g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
-        return TRUE;
     } else if (req_lun_info->loaded && !load) {
         req_lun_info->loaded = FALSE;
-        g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
-        return TRUE;
     } else {
         return FALSE;
     }
+    g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
+    return TRUE;
 }
 
 /* change the media - device must be not currently loaded */
