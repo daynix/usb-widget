@@ -560,10 +560,11 @@ gboolean spice_usb_device_manager_is_redirecting(SpiceUsbDeviceManager *self)
     return FALSE;
 }
 
-gboolean spice_usb_device_manager_is_device_cd(SpiceUsbDeviceManager *self,
+guint spice_usb_device_manager_is_device_cd(SpiceUsbDeviceManager *self,
                                                SpiceUsbDevice *device)
 {
-    return device->cd;
+    SpiceUsbDeviceManagerPrivate *priv = self->priv;
+    return device->cd ? priv->max_luns : 0;
 }
 
 gboolean spice_usb_device_manager_device_max_luns(SpiceUsbDeviceManager *self,
