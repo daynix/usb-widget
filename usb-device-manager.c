@@ -6,7 +6,9 @@
 #include "spice-client.h"
 
 // this is the structure behind SpiceUsbDevice
-typedef struct _SpiceUsbDevice {
+typedef struct _SpiceUsbDeviceInfo {
+    gint ref;
+
     guint8  busnum;
     guint8  devaddr;
     guint16 vid;
@@ -17,7 +19,7 @@ typedef struct _SpiceUsbDevice {
     gboolean connected;
 
     GPtrArray *luns_array;
-} _SpiceUsbDevice;
+} SpiceUsbDeviceInfo;
 
 #define SPICE_USB_DEVICE_MANAGER_GET_PRIVATE(obj)                                  \
     (G_TYPE_INSTANCE_GET_PRIVATE ((obj), SPICE_TYPE_USB_DEVICE_MANAGER, SpiceUsbDeviceManagerPrivate))
@@ -31,7 +33,7 @@ struct _SpiceUsbDeviceManagerPrivate {
     gchar *redirect_on_connect;
 };
 
-static SpiceUsbDevice _dev_array[] = {
+static SpiceUsbDeviceInfo _dev_array[] = {
     {
         .vid = 1200, .pid = 12,
         .redirecting = TRUE, .cd = TRUE, .connected = TRUE,
@@ -73,6 +75,34 @@ static SpiceUsbDeviceManager *_usb_dev_manager;
 static gboolean _is_initialized = FALSE;
 static GPtrArray *_dev_ptr_array = NULL;
 static guint signals[LAST_SIGNAL] = { 0, };
+
+static SpiceUsbDevice *spice_usb_device_ref(SpiceUsbDevice *dev_handle)
+{
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)dev_handle;
+
+    g_return_val_if_fail(device != NULL, NULL);
+    g_atomic_int_inc(&device->ref);
+    return dev_handle;
+}
+
+static void spice_usb_device_unref(SpiceUsbDevice *dev_handle)
+{
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)dev_handle;
+    gboolean ref_count_is_0;
+
+    g_return_if_fail(device != NULL);
+
+    ref_count_is_0 = g_atomic_int_dec_and_test(&device->ref);
+    if (ref_count_is_0) {
+        device->vid = device->pid = 0;
+        SPICE_DEBUG("%s: deleting %p", __FUNCTION__, device);
+        g_free(device);
+    }
+}
+
+G_DEFINE_BOXED_TYPE(SpiceUsbDevice, spice_usb_device,
+                    (GBoxedCopyFunc)spice_usb_device_ref,
+                    (GBoxedFreeFunc)spice_usb_device_unref)
 
 static void spice_usb_device_manager_initable_iface_init(GInitableIface *iface);
 
@@ -305,16 +335,18 @@ SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
 
         _dev_ptr_array = g_ptr_array_new();
         for (i = 0; i < G_N_ELEMENTS(_dev_array); i++) {
-            SpiceUsbDevice *dev_info;
+            SpiceUsbDeviceInfo *device;
             /* allocate new usb device and copy the pre-set device */
-            dev_info = g_malloc(sizeof(*dev_info));
-            memcpy(dev_info, &_dev_array[i], sizeof(*dev_info));
-            dev_info->busnum = 10 * (i + 1);
-            dev_info->devaddr = i + 1;
+            device = g_malloc(sizeof(*device));
+            memcpy(device, &_dev_array[i], sizeof(*device));
+            device->ref = 0;
+            device->busnum = 10 * (i + 1);
+            device->devaddr = i + 1;
             /* allocate empty lun array */
-            dev_info->luns_array = g_ptr_array_new();
+            device->luns_array = g_ptr_array_new();
             /* add usb device to the global list */
-            g_ptr_array_add(_dev_ptr_array, (gpointer)dev_info);
+            g_ptr_array_add(_dev_ptr_array, (gpointer)device);
+            spice_usb_device_ref((SpiceUsbDevice *)device);
         }
 
         /* add lun 1 */
@@ -350,26 +382,30 @@ GPtrArray* spice_usb_device_manager_get_devices_with_filter(
     return _dev_ptr_array;
 }
 
-guint8 spice_usb_device_get_busnum(const SpiceUsbDevice *device)
+guint8 spice_usb_device_get_busnum(const SpiceUsbDevice *dev_handle)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     g_return_val_if_fail(device != NULL, 0);
     return device->busnum;
 }
 
-guint8 spice_usb_device_get_devaddr(const SpiceUsbDevice *device)
+guint8 spice_usb_device_get_devaddr(const SpiceUsbDevice *dev_handle)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     g_return_val_if_fail(device != NULL, 0);
     return device->devaddr;
 }
 
-guint16 spice_usb_device_get_vid(const SpiceUsbDevice *device)
+guint16 spice_usb_device_get_vid(const SpiceUsbDevice *dev_handle)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     g_return_val_if_fail(device != NULL, 0);
     return device->vid;
 }
 
-guint16 spice_usb_device_get_pid(const SpiceUsbDevice *device)
+guint16 spice_usb_device_get_pid(const SpiceUsbDevice *dev_handle)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     g_return_val_if_fail(device != NULL, 0);
     return device->pid;
 }
@@ -383,23 +419,24 @@ void spice_usb_util_get_device_strings(int bus, int address,
 }
 
 void spice_usb_device_get_info(SpiceUsbDeviceManager *manager,
-                               SpiceUsbDevice *device,
-                               SpiceUsbDeviceDescription *info)
+                               SpiceUsbDevice *dev_handle,
+                               SpiceUsbDeviceDescription *dev_descr)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     g_return_if_fail(device != NULL);
 
-    info->bus = spice_usb_device_get_busnum(device);
-    info->address = spice_usb_device_get_devaddr(device);
-    info->vendor_id = spice_usb_device_get_vid(device);
-    info->product_id = spice_usb_device_get_pid(device);
+    dev_descr->bus = spice_usb_device_get_busnum(dev_handle);
+    dev_descr->address = spice_usb_device_get_devaddr(dev_handle);
+    dev_descr->vendor_id = spice_usb_device_get_vid(dev_handle);
+    dev_descr->product_id = spice_usb_device_get_pid(dev_handle);
 
-    spice_usb_util_get_device_strings(info->bus, info->address,
-        info->vendor_id, info->product_id, &info->vendor, &info->product);
+    spice_usb_util_get_device_strings(dev_descr->bus, dev_descr->address,
+        dev_descr->vendor_id, dev_descr->product_id, &dev_descr->vendor, &dev_descr->product);
 }
 
 /**
  * spice_usb_device_get_description:
- * @device: #SpiceUsbDevice to get the description of
+ * @device: #SpiceUsbDeviceInfo to get the description of
  * @format: (allow-none): an optional printf() format string with
  * positional parameters
  *
@@ -418,17 +455,18 @@ void spice_usb_device_get_info(SpiceUsbDeviceManager *manager,
  *
  * Returns: a newly-allocated string holding the description, or %NULL if failed
  */
-gchar *spice_usb_device_get_description(SpiceUsbDevice *device, const gchar *format)
+gchar *spice_usb_device_get_description(SpiceUsbDevice *dev_handle, const gchar *format)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     guint16 bus, address, vid, pid;
     gchar *description, *descriptor, *manufacturer = NULL, *product = NULL;
 
     g_return_val_if_fail(device != NULL, NULL);
 
-    bus     = spice_usb_device_get_busnum(device);
-    address = spice_usb_device_get_devaddr(device);
-    vid     = spice_usb_device_get_vid(device);
-    pid     = spice_usb_device_get_pid(device);
+    bus     = spice_usb_device_get_busnum(dev_handle);
+    address = spice_usb_device_get_devaddr(dev_handle);
+    vid     = spice_usb_device_get_vid(dev_handle);
+    pid     = spice_usb_device_get_pid(dev_handle);
 
     if ((vid > 0) && (pid > 0)) {
         descriptor = g_strdup_printf("[%04x:%04x]", vid, pid);
@@ -451,15 +489,17 @@ gchar *spice_usb_device_get_description(SpiceUsbDevice *device, const gchar *for
 
 
 gboolean spice_usb_device_manager_is_device_connected(SpiceUsbDeviceManager *manager,
-                                                      SpiceUsbDevice *device)
+                                                      SpiceUsbDevice *dev_handle)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     return device->connected;
 }
 
 gboolean spice_usb_device_manager_connect_device_sync(SpiceUsbDeviceManager *self,
-                                                      SpiceUsbDevice *device)
+                                                      SpiceUsbDevice *dev_handle)
 {
     SpiceUsbDeviceManagerPrivate *priv = self->priv;
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)dev_handle;
 
     if (!device->connected) {
         if (priv->free_channels > 0) {
@@ -472,9 +512,10 @@ gboolean spice_usb_device_manager_connect_device_sync(SpiceUsbDeviceManager *sel
 }
 
 gboolean spice_usb_device_manager_disconnect_device_sync(SpiceUsbDeviceManager *self,
-                                                         SpiceUsbDevice *device)
+                                                         SpiceUsbDevice *dev_handle)
 {
     SpiceUsbDeviceManagerPrivate *priv = self->priv;
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)dev_handle;
 
     if (device->connected) {
         device->connected = FALSE;
@@ -487,34 +528,34 @@ gboolean spice_usb_device_manager_disconnect_device_sync(SpiceUsbDeviceManager *
 
 void spice_usb_device_manager_connect_device_async(
                                              SpiceUsbDeviceManager *self,
-                                             SpiceUsbDevice *device,
+                                             SpiceUsbDevice *dev_handle,
                                              GCancellable *cancellable,
                                              GAsyncReadyCallback callback,
                                              gpointer user_data)
 {
-    GAsyncResult *res = (GAsyncResult *)((gpointer)device); /* provides device access in x_finish() */
+    GAsyncResult *res = (GAsyncResult *)((gpointer)dev_handle); /* provides device access in x_finish() */
 
-    spice_usb_device_manager_connect_device_sync(self, device);
+    spice_usb_device_manager_connect_device_sync(self, dev_handle);
     callback(G_OBJECT(self), res, user_data);
 }
 
 void spice_usb_device_manager_disconnect_device_async(
                                              SpiceUsbDeviceManager *self,
-                                             SpiceUsbDevice *device,
+                                             SpiceUsbDevice *dev_handle,
                                              GCancellable *cancellable,
                                              GAsyncReadyCallback callback,
                                              gpointer user_data)
 {
-    GAsyncResult *res = (GAsyncResult *)((gpointer)device); /* provides device access in x_finish() */
+    GAsyncResult *res = (GAsyncResult *)((gpointer)dev_handle); /* provides device access in x_finish() */
 
-    spice_usb_device_manager_disconnect_device_sync(self, device);
+    spice_usb_device_manager_disconnect_device_sync(self, dev_handle);
     callback(G_OBJECT(self), res, user_data);
 }
 
 gboolean spice_usb_device_manager_connect_device_finish(
     SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
 {
-    SpiceUsbDevice *device = (SpiceUsbDevice *)((gpointer)res);
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)((gpointer)res);
 
     if (device->connected) {
         if (err) {
@@ -532,7 +573,7 @@ gboolean spice_usb_device_manager_connect_device_finish(
 gboolean spice_usb_device_manager_disconnect_device_finish(
     SpiceUsbDeviceManager *self, GAsyncResult *res, GError **err)
 {
-    SpiceUsbDevice *device = (SpiceUsbDevice *)((gpointer)res);
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)((gpointer)res);
 
     if (!device->connected) {
         if (err) {
@@ -548,9 +589,9 @@ gboolean spice_usb_device_manager_disconnect_device_finish(
 }
 
 gboolean
-spice_usb_device_manager_can_redirect_device(SpiceUsbDeviceManager  *self,
-                                             SpiceUsbDevice         *device,
-                                             GError                **err)
+spice_usb_device_manager_can_redirect_device(SpiceUsbDeviceManager *self,
+                                             SpiceUsbDevice *dev_handle,
+                                             GError **err)
 {
     return TRUE;
 }
@@ -561,14 +602,16 @@ gboolean spice_usb_device_manager_is_redirecting(SpiceUsbDeviceManager *self)
 }
 
 guint spice_usb_device_manager_is_device_cd(SpiceUsbDeviceManager *self,
-                                               SpiceUsbDevice *device)
+                                            SpiceUsbDevice *dev_handle)
 {
     SpiceUsbDeviceManagerPrivate *priv = self->priv;
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
+
     return device->cd ? priv->max_luns : 0;
 }
 
 gboolean spice_usb_device_manager_device_max_luns(SpiceUsbDeviceManager *self,
-                                                  SpiceUsbDevice *device)
+                                                  SpiceUsbDevice *dev_handle)
 {
     SpiceUsbDeviceManagerPrivate *priv = self->priv;
     return priv->max_luns;
@@ -576,12 +619,13 @@ gboolean spice_usb_device_manager_device_max_luns(SpiceUsbDeviceManager *self,
 
 /* array of guint LUN indices */
 GArray *spice_usb_device_manager_get_device_luns(SpiceUsbDeviceManager *self,
-                                                 SpiceUsbDevice *device)
+                                                 SpiceUsbDevice *dev_handle)
 {
-    GArray *lun_array = g_array_new (FALSE, FALSE, sizeof(guint));
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)dev_handle;
+    GArray *lun_array = g_array_new(FALSE, FALSE, sizeof(guint));
     guint i;
 
-    for (i = 0;  i < device->luns_array->len; i++) {
+    for (i = 0; i < device->luns_array->len; i++) {
         g_array_append_val(lun_array, i);
     }
 
@@ -600,13 +644,14 @@ static void spice_usb_device_manager_copy_lun_info(SpiceUsbDeviceLunInfo *new_lu
     new_lun_info->locked = lun_info->locked;
 }
 
-static void spice_usb_device_manager_add_lun_to_dev(SpiceUsbDevice *dev_info,
+static void spice_usb_device_manager_add_lun_to_dev(SpiceUsbDevice *dev_handle,
                                                     SpiceUsbDeviceLunInfo *lun_info,
                                                     gint dev_index, gint lun_index)
 {
+    SpiceUsbDeviceInfo *device = (SpiceUsbDeviceInfo *)dev_handle;
     SpiceUsbDeviceLunInfo *new_lun_info = g_malloc(sizeof(*lun_info));
     spice_usb_device_manager_copy_lun_info(new_lun_info, lun_info);
-    g_ptr_array_add(dev_info->luns_array, new_lun_info);
+    g_ptr_array_add(device->luns_array, new_lun_info);
     g_print("add_cd_lun file:%s vendor:%s prod:%s rev:%s  "
             "started:%d loaded:%d locked:%d - usb dev:%d [%d:%d] as lun:%d\n",
             lun_info->file_path,
@@ -617,8 +662,8 @@ static void spice_usb_device_manager_add_lun_to_dev(SpiceUsbDevice *dev_info,
             lun_info->loaded,
             lun_info->locked,
             dev_index,
-            (gint)spice_usb_device_get_busnum(dev_info),
-            (gint)spice_usb_device_get_devaddr(dev_info),
+            (gint)spice_usb_device_get_busnum(dev_handle),
+            (gint)spice_usb_device_get_devaddr(dev_handle),
             lun_index);
 }
 
@@ -628,37 +673,41 @@ gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
 {
     SpiceUsbDeviceManagerPrivate *priv = self->priv;
     guint num_usb_devs = (_dev_ptr_array != NULL) ? _dev_ptr_array->len : 0;
-    SpiceUsbDevice *dev_info;
+    SpiceUsbDeviceInfo *device;
     guint dev_ind, num_luns;
 
     for (dev_ind = 0; dev_ind < num_usb_devs; dev_ind++) {
-        dev_info = g_ptr_array_index(_dev_ptr_array, dev_ind);
-        if (!spice_usb_device_manager_is_device_cd(self, dev_info)) {
+        device = g_ptr_array_index(_dev_ptr_array, dev_ind);
+        if (!spice_usb_device_manager_is_device_cd(self, (SpiceUsbDevice *)device)) {
             continue;
         }
-        num_luns = dev_info->luns_array->len;
+        num_luns = device->luns_array->len;
         if (num_luns < priv->max_luns) {
-            spice_usb_device_manager_add_lun_to_dev(dev_info, lun_info, dev_ind, num_luns);
+            spice_usb_device_manager_add_lun_to_dev((SpiceUsbDevice *)device,
+                                                    lun_info, dev_ind, num_luns);
             if (_is_initialized) {
-                g_signal_emit(self, signals[DEVICE_CHANGED], 0, dev_info);
+                g_signal_emit(self, signals[DEVICE_CHANGED], 0, device);
             }
             return TRUE;
         }
     }
     /* allocate new usb device */
-    dev_info = g_malloc(sizeof(*dev_info));
+    device = g_malloc(sizeof(*device));
     /* generate some usb dev info */
-    memcpy(dev_info, &_dev_array[0], sizeof(*dev_info));
-    dev_info->connected = FALSE;
-    dev_info->devaddr = num_usb_devs + 1;
-    dev_info->busnum = 10 * dev_info->devaddr;
+    memcpy(device, &_dev_array[0], sizeof(*device));
+    device->ref = 0;
+    device->devaddr = num_usb_devs + 1;
+    device->busnum = 10 * device->devaddr;
+    device->connected = FALSE;
 
-    dev_info->luns_array = g_ptr_array_new();
-    g_ptr_array_add(_dev_ptr_array, (gpointer)dev_info);
+    device->luns_array = g_ptr_array_new();
+    g_ptr_array_add(_dev_ptr_array, (gpointer)device);
+    spice_usb_device_ref((SpiceUsbDevice *)device);
+
     /* add the new LUN to it */
-    spice_usb_device_manager_add_lun_to_dev(dev_info, lun_info, num_usb_devs, 0);
+    spice_usb_device_manager_add_lun_to_dev((SpiceUsbDevice *)device, lun_info, num_usb_devs, 0);
     if (_is_initialized) {
-        g_signal_emit(self, signals[DEVICE_ADDED], 0, dev_info);
+        g_signal_emit(self, signals[DEVICE_ADDED], 0, device);
     }
     return TRUE;
 }
@@ -666,10 +715,11 @@ gboolean spice_usb_device_manager_add_cd_lun(SpiceUsbDeviceManager *self,
 /* Get CD LUN info, intended primarily for enumerating LUNs */
 gboolean
 spice_usb_device_manager_device_lun_get_info(SpiceUsbDeviceManager *self,
-                                             SpiceUsbDevice *device,
+                                             SpiceUsbDevice *dev_handle,
                                              guint lun,
                                              SpiceUsbDeviceLunInfo *lun_info)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     SpiceUsbDeviceLunInfo *req_lun_info;
 
     if (lun >= device->luns_array->len) {
@@ -683,10 +733,11 @@ spice_usb_device_manager_device_lun_get_info(SpiceUsbDeviceManager *self,
 /* lock or unlock device */
 gboolean
 spice_usb_device_manager_device_lun_lock(SpiceUsbDeviceManager *self,
-                                         SpiceUsbDevice *device,
+                                         SpiceUsbDevice *dev_handle,
                                          guint lun,
                                          gboolean lock)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     SpiceUsbDeviceLunInfo *req_lun_info;
 
     if (lun >= device->luns_array->len) {
@@ -708,10 +759,11 @@ spice_usb_device_manager_device_lun_lock(SpiceUsbDeviceManager *self,
 /* load or eject device */
 gboolean
 spice_usb_device_manager_device_lun_load(SpiceUsbDeviceManager *self,
-                                         SpiceUsbDevice *device,
+                                         SpiceUsbDevice *dev_handle,
                                          guint lun,
                                          gboolean load)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     SpiceUsbDeviceLunInfo *req_lun_info;
 
     if (lun >= device->luns_array->len) {
@@ -735,10 +787,11 @@ spice_usb_device_manager_device_lun_load(SpiceUsbDeviceManager *self,
 
 gboolean
 spice_usb_device_manager_device_lun_change_media(SpiceUsbDeviceManager *self,
-                                                 SpiceUsbDevice *device,
+                                                 SpiceUsbDevice *dev_handle,
                                                  guint lun,
                                                  const SpiceUsbDeviceLunInfo *lun_info)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     SpiceUsbDeviceLunInfo *req_lun_info;
 
     if (lun >= device->luns_array->len) {
@@ -761,9 +814,10 @@ spice_usb_device_manager_device_lun_change_media(SpiceUsbDeviceManager *self,
 /* remove lun from the usb device */
 gboolean
 spice_usb_device_manager_device_lun_remove(SpiceUsbDeviceManager *self,
-                                           SpiceUsbDevice *device,
+                                           SpiceUsbDevice *dev_handle,
                                            guint lun)
 {
+    const SpiceUsbDeviceInfo *device = (const SpiceUsbDeviceInfo *)dev_handle;
     SpiceUsbDeviceLunInfo *req_lun_info;
 
     if (lun >= device->luns_array->len) {
@@ -785,9 +839,4 @@ spice_usb_device_manager_device_lun_remove(SpiceUsbDeviceManager *self,
         }
     }
     return TRUE;
-}
-
-GType spice_usb_device_get_type(void)
-{
-	return G_TYPE_POINTER;
 }
